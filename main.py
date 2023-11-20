@@ -86,7 +86,7 @@ def load_messages():
                 messages.append(item)
     else:
         messages.append(
-            {"role": "system", "content": "You are interviewing the user for a Front End React developer position. Your name is Joby. The user is Jay. Keep responses under 30 words and be funny sometimes"}
+            {"role": "system", "content": "You are interviewing the user for a Python senior developer position. Ask 10 interactive questions. At the end return back with a score. Your name is Joby. The user is Jay. Keep responses under 30 words and be concise and professional"}
         )
     return messages
 
