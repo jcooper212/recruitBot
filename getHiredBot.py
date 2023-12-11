@@ -37,10 +37,67 @@ def handle_chat(update: Update, context: CallbackContext) -> None:
     except ValueError:
         update.message.reply_text("Please enter a valid response.")
 
+def reset(update: Update, context: CallbackContext) -> None:
+    update.message.reply_text('Resetting...')  # Add your reset logic here
+    return reset_dbs()
+    
+def set_role(update: Update, context: CallbackContext) -> None:
+    # Get the parameter after "/role"
+    try:
+        role = update.message.text
+        role = role.replace("/role","")
+    
+        if role is not None:
+            print(f"Setting role to: {role}")
+            update.message.reply_text(f"Setting role to: {role}")
+            return setting_role(role) 
+        else:
+            print("You need to enter a valid role that you are interviewing for....")
+            update.message.reply_text("You need to enter a valid role that you are interviewing for....")
+    except ValueError:
+        update.message.reply_text("You need to enter a valid role that you are interviewing for....")
+
+
 
 ####
 
 ##Process Requests
+def setting_role(input_string):
+    try:
+            full_url = f"{BASE_URL}/set_role/?role={input_string}"
+            response = requests.post(full_url, data={})
+        
+            # Check if the request was successful (status code 200)
+            if response.status_code == 200:
+                # Return the response content as a string
+                return response.text
+            else:
+                # Print an error message if the request was not successful
+                print(f"Error: {response.status_code}")
+                return None
+    except requests.exceptions.RequestException as e:
+        # Handle exceptions, e.g., network errors
+        print(f"Exception: {e}")
+        return None
+
+def reset_dbs():
+    try:
+            full_url = f"{BASE_URL}/reset"
+            response = requests.post(full_url, data={})
+        
+            # Check if the request was successful (status code 200)
+            if response.status_code == 200:
+                # Return the response content as a string
+                return response.text
+            else:
+                # Print an error message if the request was not successful
+                print(f"Error: {response.status_code}")
+                return None
+    except requests.exceptions.RequestException as e:
+        # Handle exceptions, e.g., network errors
+        print(f"Exception: {e}")
+        return None
+
 def make_post_request(url, endpoint, input_string):
     """
     Make an HTTP POST request with string data.
@@ -87,6 +144,10 @@ def main() -> None:
 
     # Command handlers
     dispatcher.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(CommandHandler("reset", reset))
+    dispatcher.add_handler(CommandHandler("role", set_role))
+
+
 
     # Message handler for handling numbers
     dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_chat))

@@ -12,6 +12,8 @@ import os
 import json
 import requests
 
+ROLE = "Senior Python developer"
+
 load_dotenv()
 openai.api_key = os.getenv("OPEN_AI_KEY")
 openai.organization = os.getenv("OPEN_AI_ORG")
@@ -43,6 +45,16 @@ async def post_chat(user_message: str):
     chat_response = get_chat_response(user_message)
     print(chat_response)
     return chat_response
+
+@app.post("/set_role")
+async def set_role(role: str):
+    print("setting role to >> ",role)
+    ROLE = role
+    return role
+
+@app.post("/reset")
+async def post_reset():
+    reset_database()
 
 #Functions for Talk
 def transcribe_audio(file):
@@ -86,7 +98,9 @@ def load_messages():
                 messages.append(item)
     else:
         messages.append(
-            {"role": "system", "content": "You are interviewing the user for a Python senior developer position. Ask 10 interactive questions. At the end return back with a score. Your name is Joby. The user is Jay. Keep responses under 30 words and be concise and professional"}
+            {"role": "system", "content": f"You are interviewing the user for a ${ROLE} position.  Your name is Joby.  Keep responses under 30 words and be concise and professional"}
+            #{"role": "system", "content": "You are interviewing the user for a Python senior developer position. At the end return back with a score. Your name is Joby. The user is Jay. Keep responses under 30 words and be concise and professional"}
+
         )
     return messages
 
@@ -99,6 +113,14 @@ def save_messages(user_message, gpt_response):
 
     with open(file, "w") as f:
         json.dump(messages, f)
+
+def reset_database():
+    file = 'database.json'
+    
+    with open(file, "w") as f:
+        f.write("")
+    ROLE = "Senior Python developer"
+
 
 def text_to_speech(text):
     voice_id = "pNInz6obpgDQGcFmaJgB"
