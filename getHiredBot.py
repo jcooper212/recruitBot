@@ -44,13 +44,13 @@ def reset(update: Update, context: CallbackContext) -> None:
 def set_role(update: Update, context: CallbackContext) -> None:
     # Get the parameter after "/role"
     try:
-        role = update.message.text
-        role = role.replace("/role","")
+        rle = update.message.text
+        rle = rle.replace("/role","")
     
-        if role is not None:
-            print(f"Setting role to: {role}")
-            update.message.reply_text(f"Setting role to: {role}")
-            return setting_role(role) 
+        if rle is not None:
+            print(f"Setting role to: {rle}")
+            update.message.reply_text(f"Setting role to: {rle}")
+            return setting_role(rle) 
         else:
             print("You need to enter a valid role that you are interviewing for....")
             update.message.reply_text("You need to enter a valid role that you are interviewing for....")
