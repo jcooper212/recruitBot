@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Candidates Frontend</title>
+</head>
+<body>
+    <h1>Interview Candidates</h1>
+    <form action="/add_candidate" method="post">
+        <label>Name:</label>
+        <input type="text" name="Name" required>
+
+        <label>Role:</label>
+        <input type="text" name="Role" required>
+
+        <label>Location:</label>
+        <input type="text" name="Location" required>
+
+        <label>Cost:</label>
+        <input type="number" name="Cost" required>
+
+        <label>Client Price:</label>
+        <input type="number" name="Client_Price" required>
+
+        <label>Phone:</label>
+        <input type="tel" name="Phone" required>
+
+        <label>Email:</label>
+        <input type="email" name="Email" required>
+
+        <label>Status:</label>
+        <input type="text" name="Status" required>
+
+        <button type="submit">Add Candidate</button>
+    </form>
+
+    <ul>
+        {% for candidate in candidates %}
+            <li>
+                {{ candidate.Name }} - {{ candidate.Role }} - {{ candidate.Status }}
+                <a href="/delete_candidate/{{ candidate.id }}">Delete</a>
+            </li>
+        {% endfor %}
+    </ul>
+</body>
+</html>
+

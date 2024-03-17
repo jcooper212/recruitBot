@@ -226,16 +226,6 @@ def find_client_by_name(client_name: str):
     else:
         raise HTTPException(status_code=404, detail="Client not found")
 
-# Function to find a transaction by name
-@app.get("/find_transaction_by_name/{transaction_name}")
-def find_transaction_by_name(transaction_name: str):
-    # Assuming there is a name field in the transaction schema
-    transaction = find_record_by_name('transactions', transaction_name)
-    if transaction:
-        return transaction
-    else:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-
 #Function to create new DB
 @app.get("/create_db")
 def createDB():
@@ -244,7 +234,7 @@ def createDB():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS candidates (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT,
+            name TEXT UNIQUE,
             role TEXT,
             location TEXT,
             candidate_cost REAL,
@@ -269,7 +259,7 @@ def createDB():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS clients (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT,
+            name TEXT UNIQUE,
             client_mgr TEXT,
             payment_freq TEXT,
             client_type TEXT
@@ -278,22 +268,20 @@ def createDB():
 cursor.execute('''
     CREATE TABLE IF NOT EXISTS transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT,
-        hiring_mgr TEXT,
+        txn_date TEXT,
+        candidate_id INTEGER,
+        client_id INTEGER,
+        recruiter_id INTEGER,
+        referral_id INTEGER,
         client_price REAL,
-        referral_commission REAL,
-        referral_name TEXT,
         referral_price REAL,
-        recruiter_name TEXT,
         recruiter_price REAL,
-        candidate_name TEXT,
-        candidate_role TEXT,
-        location TEXT,
         start_date TEXT,
         end_date TEXT,
         num_payments_received INTEGER,
         total_client_recv REAL,
-        total_provider_paid REAL,
+        total_recruiter_paid REAL,
+        total_referral_paid REAL,
         last_payment_date TEXT
         )
     ''')
@@ -305,54 +293,74 @@ conn.commit()
 @app.get("/preload_db")
 def preloadDB():
     candidate_data = {
-        "name": "John Doe",
-        "role": "Software Engineer",
+        "name": "Siva Pandeti",
+        "role": "Data Engineer",
         "location": "City",
-        "candidate_cost": 75000.00,
+        "candidate_cost": 100,
         "phone": "123-456-7890",
         "email": "john.doe@example.com",
         "feedback": "Positive",
         "cv_link": "https://example.com/johndoe_cv.pdf",
-        "status": "Active"
+        "status": "Hired"
     }
     save_data('candidates', candidate_data)
 
-    cashflow_data = {
-        "cf_date": "2022-01-15",
-        "pay_from_id": 1,
-        "pay_to_id": 2,
-        "cf_value": 5000.00,
-        "txn_id": 1,
-        "balance": 15000.00
-    }
-    save_data('cashflows', cashflow_data)
+    # cashflow_data = {
+    #     "cf_date": "2022-01-15",
+    #     "pay_from_id": 1,
+    #     "pay_to_id": 2,
+    #     "cf_value": 5000.00,
+    #     "txn_id": 1,
+    #     "balance": 15000.00
+    # }
+    # save_data('cashflows', cashflow_data)
 
     client_data = {
-        "name": "ABC Corporation",
-        "client_mgr": "John Manager",
+        "name": "Rayze",
+        "client_mgr": "JC",
         "payment_freq": "Monthly",
-        "client_type": "Enterprise"
+        "client_type": "Owner"
+    }
+    save_data('clients', client_data)
+
+    client_data = {
+        "name": "TechRakers",
+        "client_mgr": "Ravi Kumar",
+        "payment_freq": "Monthly",
+        "client_type": "Recruiter"
+    }
+    save_data('clients', client_data)
+    client_data = {
+        "name": "Sodexo",
+        "client_mgr": "Martin Ng",
+        "payment_freq": "Monthly",
+        "client_type": "Client"
+    }
+    save_data('clients', client_data)
+    client_data = {
+        "name": "Aventar",
+        "client_mgr": "Sarosh Mistry",
+        "payment_freq": "Monthly",
+        "client_type": "Referral"
     }
     save_data('clients', client_data)
 
     transaction_data = {
-        "name": "ABC Corporation",
-        "hiring_mgr": "John Manager",
-        "client_price": 100000.00,
-        "referral_commission": 5000.00,
-        "referral_name": "Referrer",
-        "referral_price": 1000.00,
-        "recruiter_name": "Recruiter",
-        "recruiter_price": 8000.00,
-        "candidate_name": "John Doe",
-        "candidate_role": "Software Engineer",
-        "location": "City",
-        "start_date": "2022-01-01",
-        "end_date": "2022-12-31",
-        "num_payments_received": 12,
-        "total_client_recv": 95000.00,
-        "total_provider_paid": 75000.00,
-        "last_payment_date": "2022-12-15"
+        "txn_date" : "2023-12-27",
+        "candidate_id" : 1,
+        "client_id" : 2,
+        "recruiter_id" : 3,
+        "referral_id" : 4,
+        "client_price" : 105.0,
+        "referral_price" : 2.5,
+        "recruiter_price" : 100.0,
+        "start_date": "2023-12-27",
+        "end_date" : "2024-5-27",
+        "num_payments_received" : 0,
+        "total_client_recv" : 0,
+        "total_recruiter_paid" : 0.0,
+        "total_referral_paid" : 0.0,
+        "last_payment_date" : "NULL"
     }
     save_data('transactions', transaction_data)
 
