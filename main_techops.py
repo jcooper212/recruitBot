@@ -39,6 +39,7 @@ class Client(BaseModel):
     payment_freq: str
     client_type: str
 
+
 class Transaction(BaseModel):
     client_id: int
     client_price: float
@@ -63,6 +64,17 @@ class Cashflow(BaseModel):
     cf_value: float
     txn_id: int
     balance: float
+
+class Invoices(BaseModel):
+    inv_date: str
+    candidate_id: int
+    period_start: str
+    period_end: str
+    txn_id: int
+    hours_worked: float
+    inv_value: float
+    inv_status: str #NEWLY_SUBMITTED >> PROCESSED >> PAID
+
 
 # Connect to SQLite database
 def connectDB():
@@ -128,6 +140,12 @@ def create_cashflow(cashflow: Cashflow):
     save_data('cashflows', cashflow.dict())
     return {"message": "Cashflow created successfully"}
 
+# Function to handle new invoice creation
+@app.post("/new_invoice")
+def create_invoice(invoice: Invoices):
+    save_data('invoices', invoice.dict())
+    return {"message": "Invoice created successfully"}
+
 # Function to list all candidates
 @app.get("/list_candidates")
 def list_candidates():
@@ -147,6 +165,11 @@ def list_transactions():
 @app.get("/list_cashflows")
 def list_cashflows():
     return get_all_records('cashflows')
+
+# Function to list all invoices
+@app.get("/list_invoices")
+def list_invocies():
+    return get_all_records('invoices')
 
 # Function to update a candidate
 @app.put("/update_candidate/{candidate_id}")
@@ -171,6 +194,12 @@ def update_transaction(transaction_id: int, transaction: Transaction):
 def update_cashflow(cashflow_id: int, cashflow: Cashflow):
     update_data('cashflows', cashflow_id, cashflow.dict())
     return {"message": "Cashflow updated successfully"}
+
+# Function to update a invoice
+@app.put("/update_invoice/{invoice_id}")
+def update_invoice(invoice_id: int, invoice: Invoices):
+    update_data('invoices', invoice_id, invoice.dict())
+    return {"message": "Invoice updated successfully"}
 
 # Function to find a candidate by ID
 @app.get("/find_candidate/{candidate_id}")
@@ -207,6 +236,15 @@ def find_cashflow(cashflow_id: int):
         return cashflow
     else:
         raise HTTPException(status_code=404, detail="Cashflow not found")
+
+# Function to find a invoice by ID
+@app.get("/find_invoice/{invoice_id}")
+def find_invoice(invoice_id: int):
+    invoice = find_record_by_id('invoices', invoice_id)
+    if invoice:
+        return invoice
+    else:
+        raise HTTPException(status_code=404, detail="Invoice not found")
 
 # Function to find a candidate by name
 @app.get("/find_candidate_by_name/{name}")
@@ -265,24 +303,38 @@ def createDB():
             client_type TEXT
         )
     ''')
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS transactions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        txn_date TEXT,
-        candidate_id INTEGER,
-        client_id INTEGER,
-        recruiter_id INTEGER,
-        referral_id INTEGER,
-        client_price REAL,
-        referral_price REAL,
-        recruiter_price REAL,
-        start_date TEXT,
-        end_date TEXT,
-        num_payments_received INTEGER,
-        total_client_recv REAL,
-        total_recruiter_paid REAL,
-        total_referral_paid REAL,
-        last_payment_date TEXT
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS invoices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            inv_date TEXT,
+            candidate_id INTEGER,
+            period_start TEXT,
+            period_end TEXT,
+            txn_id INTEGER,
+            hours_worked FLOAT,
+            inv_value FLOAT,
+            inv_status TEXT
+            )
+        ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            txn_date TEXT,
+            candidate_id INTEGER,
+            client_id INTEGER,
+            recruiter_id INTEGER,
+            referral_id INTEGER,
+            client_price REAL,
+            referral_price REAL,
+            recruiter_price REAL,
+            start_date TEXT,
+            end_date TEXT,
+            num_payments_received INTEGER,
+            total_client_recv REAL,
+            total_recruiter_paid REAL,
+            total_referral_paid REAL,
+            last_payment_date TEXT
         )
     ''')
 conn.commit()
@@ -364,6 +416,17 @@ def preloadDB():
     }
     save_data('transactions', transaction_data)
 
+    invoice_data = {
+        "inv_date":  "2023-12-31",
+        "candidate_id": 1,
+        "period_start":  "2023-12-18",
+        "period_end": "2023-12-31",
+        "txn_id": 1,
+        "hours_worked": 72,
+        "inv_value":  7560,
+        "inv_status": "PROCESSED" #NEWLY_SUBMITTED >> PROCESSED >> PAID
+    }
+    save_data('invoices', invoice_data)
 
 ##MAIN
 if __name__ == "__main__":
