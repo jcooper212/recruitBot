@@ -167,6 +167,13 @@ def find_record_by_id(table_name, record_id):
     cursor.execute(f'SELECT * FROM {table_name} WHERE id = ?', (record_id,))
     return cursor.fetchone()
 
+# Function to find a record by ID
+def find_record_by_field(table_name, field_name, field_value):
+    cursor, conn = connectDB()
+    cursor.execute(f'SELECT * FROM {table_name} WHERE {field_name} = --- ', field_value)
+    print()
+    return cursor.fetchall()
+
 # Function to find a record by name
 def find_record_by_name(table_name, name):
     cursor, conn = connectDB()
@@ -355,6 +362,75 @@ def find_user_by_name(user_name: str):
         return user
     else:
         raise HTTPException(status_code=404, detail="User not found")
+
+# Function to find a user by name
+@app.get("/find_my_candidates{client_id}")
+def find_my_candidates(client_id: int):
+    txn = find_record_by_field('transactions', 'client_id',client_id)
+    if txn:
+        return txn
+    else:
+        raise HTTPException(status_code=404, detail="Txn not found")
+    
+# Given a Transaction Id generate NEW temporary invoices
+@app.post("/generate_invoices/{transaction_id}")
+def generate_invoices(transaction_id):
+    # Connect to the database
+    # conn = sqlite3.connect('your_database.db')
+    # cursor = conn.cursor()
+
+    # # Query the database for the transaction
+    # cursor.execute("SELECT * FROM transactions WHERE txn_id=?", (transaction_id,))
+    # transaction = cursor.fetchone()
+    transaction = find_transaction(transaction_id)
+    if not transaction:
+        print("Transaction not found.")
+        return 0
+
+    # Calculate the number of invoices to be generated
+    start_date = datetime.strptime(transaction[9], '%Y-%m-%d')  # Index 9 is start_date
+    end_date = datetime.strptime(transaction[10], '%Y-%m-%d')  # Index 10 is end_date
+    num_months = (end_date.year - start_date.year) * 12 + end_date.month - start_date.month + 1
+
+    # Generate invoices for each end of month
+    invoices_written = 0
+    for i in range(num_months):
+        # Calculate invoice details
+        inv_date = (start_date + timedelta(days=32)).replace(day=1) - timedelta(days=1)  # Last day of month
+        period_start = start_date
+        period_end = inv_date
+        hours_worked = 160  # Default hours worked
+        inv_value = transaction[5] * hours_worked  # Index 5 is client_price
+        inv_status = "PRE"
+
+        # Insert invoice data into the database
+        invoice_data = {
+        "inv_date":  inv_date.strftime('%Y-%m-%d'),
+        "candidate_id": transaction[2],
+        "period_start":  period_start.strftime('%Y-%m-%d'),
+        "period_end": period_end.strftime('%Y-%m-%d'),
+        "txn_id": transaction[0],
+        "hours_worked": hours_worked,
+        "inv_value":  inv_value,
+        "inv_status": inv_status #NEW >> PROCESSED >> PAID
+        }
+        save_data('invoices', invoice_data)
+        invoices_written += 1
+        # Move start_date to the next month
+        start_date = start_date + timedelta(days=32)
+
+
+        # cursor.execute('''INSERT INTO invoices (inv_date, candidate_id, period_start, period_end, txn_id, hours_worked, inv_value, inv_status) 
+        #                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+        #                (inv_date.strftime('%Y-%m-%d'), transaction[1], period_start.strftime('%Y-%m-%d'),
+        #                 period_end.strftime('%Y-%m-%d'), transaction[0], hours_worked, inv_value, inv_status))
+
+    
+        # # Commit changes and close connection
+        # conn.commit()
+        # conn.close()
+
+    return invoices_written
     
 # Authenticataion functions
 # Function to generate access token route
@@ -498,25 +574,40 @@ def preloadDB():
     candidate_data = {
         "name": "Siva Pandeti",
         "role": "Data Engineer",
-        "location": "City",
+        "location": "Virgina",
         "candidate_cost": 100,
-        "phone": "123-456-7890",
-        "email": "john.doe@example.com",
+        "phone": "703-937-7731",
+        "email": "psivah@gmail.com",
         "feedback": "Positive",
-        "cv_link": "https://example.com/johndoe_cv.pdf",
+        "cv_link": "https://drive.google.com/file/d/1jkXYMRNpgrfysYOAXDzricr0gswyy0o6/view?usp=drive_link",
         "status": "Hired"
     }
     save_data('candidates', candidate_data)
-
-    # cashflow_data = {
-    #     "cf_date": "2022-01-15",
-    #     "pay_from_id": 1,
-    #     "pay_to_id": 2,
-    #     "cf_value": 5000.00,
-    #     "txn_id": 1,
-    #     "balance": 15000.00
-    # }
-    # save_data('cashflows', cashflow_data)
+    candidate_data = {
+        "name": "Balachander Kandukuri",
+        "role": "ML Engineer",
+        "location": "Texas",
+        "candidate_cost": 100,
+        "phone": "346-565-5618",
+        "email": "kbalachandra1007@gmail.com",
+        "feedback": "Positive",
+        "cv_link": "https://docs.google.com/document/d/1PUErMHUVJVJRXK5pKqaI-RXsCcdEB74d/edit?usp=sharing&ouid=116979632690159824360&rtpof=true&sd=true",
+        "status": "Hired"
+    }
+    save_data('candidates', candidate_data)
+    candidate_data = {
+        "name": "Nishant Vagasiha",
+        "role": "Ruby on rails Engineer",
+        "location": "India",
+        "candidate_cost": 30,
+        "phone": "+91  87932 93234",
+        "email": "nishant@webmatrixcorp.com",
+        "feedback": "Positive",
+        "cv_link": "https://docs.google.com/document/d/18u87iGyZYepZEnMMvQWx2nxQ9SGjWR8s3peWF9dlDPc/edit?usp=sharing",
+        "status": "Hired"
+    }
+    save_data('candidates', candidate_data)
+    
 
     client_data = {
         "name": "Rayze",
@@ -547,18 +638,25 @@ def preloadDB():
         "client_type": "Referral"
     }
     save_data('clients', client_data)
+    client_data = {
+        "name": "InKind",
+        "client_mgr": "Dijoy Divakar",
+        "payment_freq": "Monthly",
+        "client_type": "Client"
+    }
+    save_data('clients', client_data)
 
     transaction_data = {
-        "txn_date" : "2023-12-27",
+        "txn_date" : "2023-12-26",
         "candidate_id" : 1,
-        "client_id" : 2,
-        "recruiter_id" : 3,
+        "client_id" : 3,
+        "recruiter_id" : 2,
         "referral_id" : 4,
         "client_price" : 105.0,
         "referral_price" : 2.5,
         "recruiter_price" : 100.0,
-        "start_date": "2023-12-27",
-        "end_date" : "2024-5-27",
+        "start_date": "2023-12-26",
+        "end_date" : "2024-6-26",
         "num_payments_received" : 0,
         "total_client_recv" : 0,
         "total_recruiter_paid" : 0.0,
@@ -567,17 +665,55 @@ def preloadDB():
     }
     save_data('transactions', transaction_data)
 
-    invoice_data = {
-        "inv_date":  "2023-12-31",
-        "candidate_id": 1,
-        "period_start":  "2023-12-18",
-        "period_end": "2023-12-31",
-        "txn_id": 1,
-        "hours_worked": 72,
-        "inv_value":  7560,
-        "inv_status": "PROCESSED" #NEWLY_SUBMITTED >> PROCESSED >> PAID
+    transaction_data = {
+        "txn_date" : "2024-03-01",
+        "candidate_id" : 2,
+        "client_id" : 3,
+        "recruiter_id" : 2,
+        "referral_id" : 4,
+        "client_price" : 120.0,
+        "referral_price" : 5.0,
+        "recruiter_price" : 110.0,
+        "start_date": "2024-03-01",
+        "end_date" : "2024-08-31",
+        "num_payments_received" : 0,
+        "total_client_recv" : 0,
+        "total_recruiter_paid" : 0.0,
+        "total_referral_paid" : 0.0,
+        "last_payment_date" : "NULL"
     }
-    save_data('invoices', invoice_data)
+    save_data('transactions', transaction_data)
+
+    transaction_data = {
+        "txn_date" : "2024-03-01",
+        "candidate_id" : 3,
+        "client_id" : 5,
+        "recruiter_id" : 2,
+        "referral_id" : 4,
+        "client_price" : 37.0,
+        "referral_price" : 2.5,
+        "recruiter_price" : 32.0,
+        "start_date": "2024-03-01",
+        "end_date" : "2024-08-31",
+        "num_payments_received" : 0,
+        "total_client_recv" : 0,
+        "total_recruiter_paid" : 0.0,
+        "total_referral_paid" : 0.0,
+        "last_payment_date" : "NULL"
+    }
+    save_data('transactions', transaction_data)
+
+    # invoice_data = {
+    #     "inv_date":  "2023-12-31",
+    #     "candidate_id": 1,
+    #     "period_start":  "2023-12-18",
+    #     "period_end": "2023-12-31",
+    #     "txn_id": 1,
+    #     "hours_worked": 72,
+    #     "inv_value":  7560,
+    #     "inv_status": "PROCESSED" #PRE >> PROCESSED >> PAID //PRE invoices are per txn. so need to be aggregated by client
+    # }
+    # save_data('invoices', invoice_data)
 
     user_data = {
         "name": "JC",

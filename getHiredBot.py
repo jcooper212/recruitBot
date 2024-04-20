@@ -9,7 +9,8 @@ import requests
 
 # Replace 'YOUR_TOKEN' with the actual token you obtained from the BotFather
 TOKEN = '6732676851:AAEH0pEJ1lmcn4CpIbG_iANDwTH5mXTkA10'
-BASE_URL = 'http://localhost:8000'
+BASE_URL = 'http://localhost:8888' #'http://localhost:8000'
+
 CHAT_ENDPOINT = 'chat'
 
 def start(update: Update, context: CallbackContext) -> None:
