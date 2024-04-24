@@ -1,18 +1,24 @@
-// src/App.js
+// App.js
 import React from 'react';
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
-import LoginForm from './LoginForm';
-import Home from './Home';
+import Navbar from './components/Navbar';
+import LandingPage from './components/LandingPage';
+import LoginPage from './components/LoginPage';
+import Register from './components/Register';
+import InvoicePage from './components/InvoicePage';
+
 
 function App() {
   return (
     <Router>
       <div className="App">
+        <Navbar />
         <Routes>
-          {/* <Route exact path="/" component={Home} /> */}
-          <Route path="/" element={<Home />}></Route>
-          <Route path="/login" element={<LoginForm />}></Route>
-          {/* <Route exact path="/login" component={LoginForm} /> */}
+          <Route exact path="/" element={<LandingPage/>} />
+          <Route path="/invoice" element={<InvoicePage clientName='Sodexo'/>}/>
+          <Route path="/about" render={() => <h2>About Page</h2>} />
+          <Route path="/login" element={<LoginPage/>} />
+          <Route path="/register" element={<Register/>} />
         </Routes>
       </div>
     </Router>
@@ -20,3 +26,4 @@ function App() {
 }
 
 export default App;
+

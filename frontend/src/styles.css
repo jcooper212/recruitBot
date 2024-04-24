@@ -1,0 +1,74 @@
+/* styles.css */
+
+/* Global styles */
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+/* Navbar styles */
+nav {
+  background-color: #333;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+}
+
+nav ul {
+  list-style: none;
+  display: flex;
+  gap: 20px;
+}
+
+nav ul li {
+  font-size: 18px;
+}
+
+nav ul li a {
+  color: #fff;
+  text-decoration: none;
+  transition: color 0.3s ease;
+}
+
+nav ul li a:hover {
+  color: #ddd;
+}
+
+.logo img {
+  height: 40px;
+}
+
+/* Landing page styles */
+.landing-page {
+  text-align: center;
+  margin-top: 50px;
+}
+
+.landing-page h1 {
+  font-size: 36px;
+  margin-bottom: 20px;
+}
+
+.landing-page button {
+  background-color: #007bff;
+  color: #fff;
+  border: none;
+  padding: 10px 20px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.landing-page button:hover {
+  background-color: #0056b3;
+}
+

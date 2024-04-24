@@ -40,3 +40,13 @@ Billing
 2/ Approve Invoice for bi-weekly (or) monthly work & sendmail generated bill to client - JC
 3/ Update Client payment status - JC
 4/ Update Invoice payment status - JC
+
+
+
+
+/////////////////To Do/////
+Login SCreen
+- Forgot password
+- captch
+- error checking on text fields
+

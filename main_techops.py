@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.middleware.cors import CORSMiddleware
 import jwt
 import hashlib
 from pydantic import BaseModel
@@ -24,12 +25,22 @@ elevenlabs_key = os.getenv("ELEVENLABS_KEY")
 # JWT Define a secret key (change this to a secure random value in production)
 sec_value = os.getenv("RAYZE_KEY")
 SECRET_KEY = str(sec_value)
+sec_value = os.getenv("CLIENT_KEY")
+CLIENT_KEY = str(sec_value)
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 app = FastAPI()
+# Allow requests from localhost:3000
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+)
 conn = sqlite3.connect('hired.db')
 cursor = conn.cursor()
 
@@ -179,6 +190,29 @@ def find_record_by_name(table_name, name):
     cursor, conn = connectDB()
     cursor.execute(f'SELECT * FROM {table_name} WHERE name = ?', (name,))
     return cursor.fetchone()
+
+#get transactions for a given recruiter
+@app.get("/get_client_transactions/{recruiter_id}")
+def get_client_transactions(recruiter_id):
+    # Connect to the SQLite database
+    cursor, conn = connectDB()
+
+    # Execute the SQL query with parameterized input
+    cursor.execute('''
+        SELECT transactions.id AS txn_id, candidates.id AS candidate_id, clients.name AS client_name, candidates.name AS candidate_name 
+        FROM transactions
+        JOIN clients ON transactions.client_id = clients.id
+        JOIN candidates ON transactions.candidate_id = candidates.id
+        WHERE transactions.recruiter_id = ?
+    ''', (recruiter_id,))  # Pass the recruiter ID as a parameter
+
+    # Fetch all rows from the result set
+    rows = cursor.fetchall()
+
+    # Close the database connection
+    conn.close()
+
+    return rows
 
 # Function to handle new candidate creation
 @app.post("/new_candidate")
@@ -373,15 +407,9 @@ def find_my_candidates(client_id: int):
         raise HTTPException(status_code=404, detail="Txn not found")
     
 # Given a Transaction Id generate NEW temporary invoices
+
 @app.post("/generate_invoices/{transaction_id}")
 def generate_invoices(transaction_id):
-    # Connect to the database
-    # conn = sqlite3.connect('your_database.db')
-    # cursor = conn.cursor()
-
-    # # Query the database for the transaction
-    # cursor.execute("SELECT * FROM transactions WHERE txn_id=?", (transaction_id,))
-    # transaction = cursor.fetchone()
     transaction = find_transaction(transaction_id)
     if not transaction:
         print("Transaction not found.")
@@ -560,7 +588,8 @@ def createDB():
             email TEXT,
             msg_id str,
             role TEXT,
-            password TEXT
+            password TEXT,
+            client_id int
         )
     ''')
     conn.commit()
@@ -716,11 +745,30 @@ def preloadDB():
     # save_data('invoices', invoice_data)
 
     user_data = {
-        "name": "JC",
+        "name": "212cooperja@gmail.com",
         "email": "212cooperja@gmail.com",
         "msg_id": "@jc212",
         "role": "ADMIN",
-        "password": get_password_hash(SECRET_KEY)
+        "password": get_password_hash(SECRET_KEY),
+        "client_id": 0
+    }
+    save_data('users', user_data)
+    user_data = {
+        "name": "shanker@techrakers.com",
+        "email": "shanker@techrakers.com",
+        "msg_id": "@shankerravi",
+        "role": "Recruiter",
+        "password": get_password_hash(CLIENT_KEY),
+        "client_id": 0
+    }
+    save_data('users', user_data)
+    user_data = {
+        "name": "ar@techrakers.com",
+        "email": "ar@techrakers.com",
+        "msg_id": "@arrakers",
+        "role": "Recruiter",
+        "password": get_password_hash(CLIENT_KEY),
+        "client_id": 0
     }
     save_data('users', user_data)
 
