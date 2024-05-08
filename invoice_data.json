@@ -1,0 +1,12 @@
+{"total_due": "",
+ "due_date": "",
+ "invoice_title": "",
+ "invoice_num": "",
+ "invoice_date": "",
+ "client_name": "",
+ "client_contact": "",
+ "invoice_table": [{"candidate_name" : "Siva Pandeti",
+    "candidate_rate" : 100.0,
+    "candidate_hours": 160,
+    "candidate_total": 16000.0}],
+  "rayze_logo": "rayze_logo.jpg"}
