@@ -199,7 +199,8 @@ def get_client_transactions(recruiter_id):
 
     # Execute the SQL query with parameterized input
     cursor.execute('''
-        SELECT transactions.id AS txn_id, candidates.id AS candidate_id, clients.name AS client_name, candidates.name AS candidate_name 
+        SELECT transactions.id AS txn_id, candidates.id AS candidate_id, clients.name AS client_name, candidates.name AS candidate_name,
+        transactions.recruiter_price, transactions.client_price
         FROM transactions
         JOIN clients ON transactions.client_id = clients.id
         JOIN candidates ON transactions.candidate_id = candidates.id

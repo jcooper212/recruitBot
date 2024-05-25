@@ -48,7 +48,7 @@
         }
         article h4 {
             color: #333;
-            font-size: 1.5em;
+            font-size: 1.2em;
             text-align: left;
         }
         article h6 {
@@ -56,11 +56,15 @@
             font-size: 1em;
             text-align: center;
         }
+        article h7 {
+            font-size: 1em;
+            text-align: left;
+        }
 
         article p {
-            line-height: 1.6;
-            font-size: 1em;
-            tex-align: left;
+            line-height: 0.5em;
+            font-size: 0.9em;
+            text-align: left;
         }
 
         footer {
@@ -84,34 +88,39 @@
 <body>
 
     <header>
-        <h1>Rayze Invoice</h1>
+        <img src="rayze_logo" width="150" height="100" alt="Rayze Logo">
+        <br><br>
+        <h1>Invoice</h1>
+        <p> O3 Ventures | 21 Sycamore Drive Roslyn NY 11576 | +1 (516) 800 2548 | 212cooperja@gmail.com </p>
     </header>
 
 
     <main>
         <article>
-            <h2>total_due</h2>
+            <h4>O3 Ventures has sent you an invoice of total_due</h4>
             <h6>Due on: due_date</h6>
+
         </article>
         <article>
-            <h4> invoice_title </h4>
-            <p>Inovice#: invoice_num</p>
-            <p>Inovice Date: invoice_date</p>
-            <p>client_name</p>
-            <p>client_contact</p>
+            <h4> invoice_title - invoice_date</h4><br>
+            <p>Inovice#: <span style="color: gray;">invoice_num</span></p>
+            <p>Inovice Date: <span style="color: gray;">invoice_date</span></p>
+            <p>Customer: <span style="color: gray;">client_name</span></p>
+            <p>Customer Contact: <span style="color: gray;">client_contact</span></p>
+            <br>
         </article>
         <!-- More articles can be added here -->
         <article>
             <h4>Invoice Summary</h4>
-            <p></p>
-            invoice_table
-            <p></p>
+            <br>
+            <h7>invoice_table</h7>
+            <br><br>
             <h4>Total Due: total_due</h4>
         </article>
     </main>
 
     <footer>
-        &copy; Rayze Engineering. All rights reserved.
+        &copy; Rayze Engineering is an O3 Ventures company
     </footer>
 </body>
 </html>
