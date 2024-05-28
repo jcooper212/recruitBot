@@ -13,6 +13,14 @@ import openai
 import os
 import json
 import requests
+#import genInvoice
+from pathlib import Path
+from bs4 import BeautifulSoup as Soup
+
+PATH_TO_BLOG = Path('/Users/jcooper/py/genAi/recruitBot')
+PATH_TO_CONTENT = PATH_TO_BLOG/"content"
+PATH_TO_CONTENT.mkdir(exist_ok=True, parents=True)
+RAYZE_LOGO = PATH_TO_CONTENT/"rayze_logo.jpg"
 
 
 
@@ -60,6 +68,9 @@ class Candidate(BaseModel):
 class Client(BaseModel):
     name: str
     client_mgr: str
+    client_email: str
+    client_addr: str
+    client_phone: str
     payment_freq: str
     client_type: str
 
@@ -105,6 +116,20 @@ class Invoices(BaseModel):
     inv_value: float
     inv_status: str #NEWLY_SUBMITTED >> PROCESSED >> PAID
 
+class ClientInvoices(BaseModel):
+    inv_date: str
+    due_date: str
+    period_start: str
+    period_end: str
+    client_id: int
+    client_name: str
+    client_contact: str
+    client_email: str
+    client_addr: str
+    client_phone: str
+    explain_str: str
+    inv_value: float
+    inv_status: str #NEWLY_SUBMITTED >> PROCESSED >> PAID
 
 # Connect to SQLite database
 def connectDB():
@@ -200,7 +225,8 @@ def get_client_transactions(recruiter_id):
     # Execute the SQL query with parameterized input
     cursor.execute('''
         SELECT transactions.id AS txn_id, candidates.id AS candidate_id, clients.name AS client_name, candidates.name AS candidate_name,
-        transactions.recruiter_price, transactions.client_price
+        transactions.recruiter_price, transactions.client_price, clients.client_mgr as client_contact, clients.client_email AS client_email,
+        clients.client_addr AS client_addr, clients.client_phone AS client_phone, clients.id AS client_id
         FROM transactions
         JOIN clients ON transactions.client_id = clients.id
         JOIN candidates ON transactions.candidate_id = candidates.id
@@ -246,6 +272,12 @@ def create_invoice(invoice: Invoices):
     return {"message": "Invoice created successfully"}
 
 # Function to handle new invoice creation
+@app.post("/new_client_invoice")
+def create_client_invoice(invoice: ClientInvoices):
+    save_data('client_invoices', invoice.dict())
+    return {"message": "Client Invoice created successfully"}
+
+# Function to handle new invoice creation
 @app.post("/new_user")
 def create_user(user: Users):
     save_data('users', user.dict())
@@ -273,8 +305,13 @@ def list_cashflows():
 
 # Function to list all invoices
 @app.get("/list_invoices")
-def list_invocies():
+def list_invoices():
     return get_all_records('invoices')
+
+# Function to list all invoices
+@app.get("/list_client_invoices")
+def list_client_invoices():
+    return get_all_records('client_invoices')
 
 # Function to list all invoices
 @app.get("/list_users")
@@ -310,6 +347,12 @@ def update_cashflow(cashflow_id: int, cashflow: Cashflow):
 def update_invoice(invoice_id: int, invoice: Invoices):
     update_data('invoices', invoice_id, invoice.dict())
     return {"message": "Invoice updated successfully"}
+
+# Function to update a invoice
+@app.put("/update_client_invoice/{invoice_id}")
+def update_invoice(invoice_id: int, invoice: ClientInvoices):
+    update_data('client_invoices', invoice_id, invoice.dict())
+    return {"message": "Client Invoice updated successfully"}
 
 # Function to update a invoice
 @app.put("/update_user/{user_id}")
@@ -363,6 +406,15 @@ def find_invoice(invoice_id: int):
         raise HTTPException(status_code=404, detail="Invoice not found")
 
 # Function to find a invoice by ID
+@app.get("/find_client_invoice/{invoice_id}")
+def find_client_invoice(invoice_id: int):
+    invoice = find_record_by_id('client_invoices', invoice_id)
+    if invoice:
+        return invoice
+    else:
+        raise HTTPException(status_code=404, detail="Client Invoice not found")
+    
+# Function to find a invoice by ID
 @app.get("/find_user/{user_id}")
 def find_user(user_id: int):
     user = find_record_by_id('users', user_id)
@@ -406,9 +458,38 @@ def find_my_candidates(client_id: int):
         return txn
     else:
         raise HTTPException(status_code=404, detail="Txn not found")
+
+# Function to handle new invoice creation
+@app.post("/submit_client_invoice")
+def submit_client_invoice(invoice: ClientInvoices):
+    save_data('client_invoices', invoice.dict()) #first save the invoice into client_invoices to get an id
+    cursor, conn = connectDB()
+
+    # Extract the client invoice id
+    cursor.execute('''
+        SELECT id 
+        FROM client_invoices
+        WHERE client_invoices.inv_date = ? AND
+        client_invoices.client_id = ?
+    ''', (invoice.inv_date, invoice.client_id))
+
+    # Fetch all rows from the result set
+    rows = cursor.fetchall()
+    if rows:
+    # Get the value from the last row
+        inv_id = rows[-1][0]
+    else:
+        # Handle the case where no rows are returned
+        inv_id = None
+    # Close the database connection
+    conn.close()
+    #call the html creation function
+    create_html_invoice(inv_id, invoice)
+
+
+
     
 # Given a Transaction Id generate NEW temporary invoices
-
 @app.post("/generate_invoices/{transaction_id}")
 def generate_invoices(transaction_id):
     transaction = find_transaction(transaction_id)
@@ -509,6 +590,50 @@ async def authenticate(form_data: OAuth2PasswordRequestForm = Depends()):
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
+#create a new invoice in html
+def create_html_invoice(inv_id: int, invoice: ClientInvoices):
+    #new html file
+    files = len(list(PATH_TO_CONTENT.glob('*.html')))
+    new_title = f"Inv_{invoice.client_name}_{inv_id}.html"
+    new_title_pdf = f"Inv_{invoice.client_name}_{inv_id}.pdf"
+
+    path_to_new_content = PATH_TO_CONTENT/new_title
+    path_to_new_pdf = PATH_TO_CONTENT/new_title_pdf
+    path_to_template = "{}/invoice_template.html".format(PATH_TO_CONTENT)
+
+
+
+
+    #read the template
+    html_content=""
+    with open(path_to_template, 'r') as file:
+        html_content = file.read()
+        html_content = html_content.replace("total_due", f"${invoice.inv_value:.2f}")
+        html_content = html_content.replace("due_date", invoice.due_date)
+        html_content = html_content.replace("invoice_title", "Technology Services")
+        html_content = html_content.replace("invoice_num", str(inv_id))
+        html_content = html_content.replace("invoice_date", invoice.inv_date)
+        html_content = html_content.replace("client_name", invoice.client_name)
+        html_content = html_content.replace("client_contact", invoice.client_contact)
+        html_content = html_content.replace("invoice_table", invoice.explain_str)
+        html_content = html_content.replace("rayze_logo", RAYZE_LOGO.as_posix())
+
+
+    print("html_content is ", html_content)
+    
+    #Save pdf
+    # Configuration for wkhtmltopdf (you might need to provide the path to the wkhtmltopdf binary)
+    config = pdfkit.configuration(wkhtmltopdf='/usr/local/bin/wkhtmltopdf')  # Adjust path as necessary
+    pdfkit.from_string(html_content, path_to_new_pdf, configuration=config)
+
+    #write new invoice
+    if not os.path.exists(path_to_new_content):
+        with open(path_to_new_content,"w") as f:
+            f.write(html_content)
+            return path_to_new_content
+    else:
+        raise FileExistsError('file already exists')
+    
 # Authentication functions
 #Function to create new DB
 @app.get("/create_db")
@@ -545,6 +670,9 @@ def createDB():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE,
             client_mgr TEXT,
+            client_email TEXT,
+            client_addr TEXT,
+            client_phone TEXT,
             payment_freq TEXT,
             client_type TEXT
         )
@@ -558,6 +686,24 @@ def createDB():
             period_end TEXT,
             txn_id INTEGER,
             hours_worked FLOAT,
+            inv_value FLOAT,
+            inv_status TEXT
+            )
+        ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS client_invoices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            inv_date TEXT,
+            due_date TEXT,
+            period_start TEXT,
+            period_end TEXT,
+            client_id INTEGER,
+            client_name TEXT,
+            client_contact TEXT,
+            client_email TEXT,
+            client_addr TEXT,
+            client_phone TEXT,
+            explain_str TEXT,
             inv_value FLOAT,
             inv_status TEXT
             )
@@ -642,6 +788,9 @@ def preloadDB():
     client_data = {
         "name": "Rayze",
         "client_mgr": "JC",
+        "client_email": "212cooperja@gmail.com",
+        "client_addr": "21 Sycamore Drive, Roslyn NY 11576",
+        "client_phone": "516 800 2548",
         "payment_freq": "Monthly",
         "client_type": "Owner"
     }
@@ -650,6 +799,9 @@ def preloadDB():
     client_data = {
         "name": "TechRakers",
         "client_mgr": "Ravi Kumar",
+        "client_email": "shanker@techrakers.com",
+        "client_addr": "1602 W Pinhook Rd, Suite 202-B, Lafayette, LA  70508",
+        "client_phone": "703 981 6261",
         "payment_freq": "Monthly",
         "client_type": "Recruiter"
     }
@@ -657,6 +809,9 @@ def preloadDB():
     client_data = {
         "name": "Sodexo",
         "client_mgr": "Martin Ng",
+        "client_email": "martin.ng@sodexo.com",
+        "client_addr": "5290 california ave, Irvine CA 92617",
+        "client_phone": "714-944-3542",
         "payment_freq": "Monthly",
         "client_type": "Client"
     }
@@ -664,6 +819,9 @@ def preloadDB():
     client_data = {
         "name": "Aventar",
         "client_mgr": "Sarosh Mistry",
+        "client_email": "saroshmistry@sodexo.com",
+        "client_addr": "349 Pinebrook drive, Laguna CA 92654",
+        "client_phone": "949 212 9927",
         "payment_freq": "Monthly",
         "client_type": "Referral"
     }
@@ -671,6 +829,9 @@ def preloadDB():
     client_data = {
         "name": "InKind",
         "client_mgr": "Dijoy Divakar",
+        "client_email": "ap@inkind.com",
+        "client_addr": "600 Congress Ave, Suite 1700, Austin, TX 78701",
+        "client_phone": "870-273-8473",
         "payment_freq": "Monthly",
         "client_type": "Client"
     }
