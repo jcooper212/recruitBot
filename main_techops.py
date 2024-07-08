@@ -673,7 +673,7 @@ def get_invoice2(id_str: str):
             </table>
           </div>
           <div class="panel panel-2">
-            <h2>Please pay O3 Ventures llc directly via ACH.</h2>
+            <h2>Please pay O3 Ventures LLC directly via ACH.</h2>
             <h3> O3 Ventures llc | Acct Num: 40011438155 | Routing number: 124303243 </h3>
             <h5>Bank Address: American Express National Bank, PO Box 3038, Salt Lake City, UT 84130</h5>
           </div>
