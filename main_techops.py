@@ -46,7 +46,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["Authorization", "Content-Type"],
 )
 conn = sqlite3.connect('hired.db')
@@ -484,7 +484,7 @@ def submit_client_invoice(invoice: ClientInvoices):
     # Close the database connection
     conn.close()
     #call the html creation function
-    create_html_invoice(inv_id, invoice)
+    return create_html_invoice(inv_id, invoice)
 
 
 
@@ -577,6 +577,7 @@ async def verify_token(token: str = Depends(oauth2_scheme)):
 # Authenticataion functions
 @app.post("/authenticate")
 async def authenticate(form_data: OAuth2PasswordRequestForm = Depends()):
+    #print('adsf', form_data.username, form_data.password)
     user = authenticate_user(form_data.username, form_data.password)
     if not user:
         raise HTTPException(
@@ -590,6 +591,101 @@ async def authenticate(form_data: OAuth2PasswordRequestForm = Depends()):
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
+# Register functions
+@app.post("/register")
+async def authenticate(form_data: OAuth2PasswordRequestForm = Depends()):
+    #print('adsf', form_data.username, form_data.password)
+    user_data = {
+        "name": form_data.username,
+        "email": form_data.email,
+        "msg_id": form_data.msg_id,
+        "role": "CLIENT",
+        "password": get_password_hash(form_data.password),
+        "client_id": 0
+    }
+    save_data('users', user_data)
+    return "saved"
+
+@app.get("/get_invoice2")
+def get_invoice2(id_str: str):
+    if id_str == "ABC":
+        html_str = """
+        <div class="render-invoice-container">
+
+          <div class="panel">
+            <logo>
+            <img src="/images/rayze_invoice_logo.jpeg" alt="Logo" width="110" height="50">
+            </logo>
+            <h2>INVOICE</h2>
+            <h4> Bill To: Inkind | 600 Congress Ave, Suite 1700, Austin, TX 78701</h4>
+            <h2> </h2>
+            <table>
+              <tr>
+                <th>Invoice #</th>
+                <th>Invoice Date</th>
+                <th>Due Date</th>
+                <th>Amount Due</th>
+              </tr>
+              <tr>
+                <td>55</td>
+                <td>2024-08-10</td>
+                <td>2024-08-10</td>
+                <td> USD 34,888.44</td>
+              </tr>
+            </table>
+          </div>
+          <div class="panel panel-2">
+            <h2>Total Amount Due:</h2>
+            <h3>USD 34,444 USD</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Description</th>
+                  <th>Hours</th>
+                  <th>Rate</th>
+                  <th>Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Nishant Vagasiha</td>
+                  <td>Technology Services</td>
+                  <td>160</td>
+                  <td> $37.00</td>
+                  <td> $5920.00</td>
+                </tr>
+                <tr>
+                  <td>Kalyan Jangam</td>
+                  <td>Technology Services</td>
+                  <td>128</td>
+                  <td> $85.00</td>
+                  <td> $10,880.00</td>
+                </tr>
+                <tr>
+                  <td>Mayur Mulay</td>
+                  <td>Technology Services</td>
+                  <td>160</td>
+                  <td> $35.00</td>
+                  <td> $5,600.00</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel panel-2">
+            <h2>Please pay O3 Ventures llc directly via ACH.</h2>
+            <h3> O3 Ventures llc | Acct Num: 40011438155 | Routing number: 124303243 </h3>
+            <h5>Bank Address: American Express National Bank, PO Box 3038, Salt Lake City, UT 84130</h5>
+          </div>
+          <div class="panel panel-2">
+          <h7> O3 Ventures | 21 Sycamore Drive Roslyn NY | 516-800-2548 | 212cooperja@gmail.com</h7>
+          </div>
+        </div>
+        """
+        return {"html": html_str}
+    else:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    
 #create a new invoice in html
 def create_html_invoice(inv_id: int, invoice: ClientInvoices):
     #new html file
@@ -620,11 +716,12 @@ def create_html_invoice(inv_id: int, invoice: ClientInvoices):
 
 
     print("html_content is ", html_content)
+    print("explainstr is ", invoice.explain_str)
     
     #Save pdf
     # Configuration for wkhtmltopdf (you might need to provide the path to the wkhtmltopdf binary)
-    config = pdfkit.configuration(wkhtmltopdf='/usr/local/bin/wkhtmltopdf')  # Adjust path as necessary
-    pdfkit.from_string(html_content, path_to_new_pdf, configuration=config)
+    # config = pdfkit.configuration(wkhtmltopdf='/usr/local/bin/wkhtmltopdf')  # Adjust path as necessary
+    # pdfkit.from_string(html_content, path_to_new_pdf, configuration=config)
 
     #write new invoice
     if not os.path.exists(path_to_new_content):
@@ -633,6 +730,7 @@ def create_html_invoice(inv_id: int, invoice: ClientInvoices):
             return path_to_new_content
     else:
         raise FileExistsError('file already exists')
+    
     
 # Authentication functions
 #Function to create new DB
