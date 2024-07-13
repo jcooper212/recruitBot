@@ -50,6 +50,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 conn = sqlite3.connect('hired.db')
+#db_url = 'sqlite://csjlcc8lsk.sqlite.cloud:8860?apikey=D2S27bXlWEW6af6SLMcsFouWXI2728fqPQWieZxkML8'
+#engine = create_engine(db_url)
+#conn = engine.connect()
 cursor = conn.cursor()
 
 
