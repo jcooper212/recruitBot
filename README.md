@@ -8,8 +8,8 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 #start server to serve up rest apis
-uvicorn main:app --reload
-
+uvicorn main:app --reload (OR-->)
+python3 -m uvicorn main_techops:app --reload`
 #start telegram bot service (in a new terminal)
 python getHiredBot.py
 

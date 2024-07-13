@@ -1,19 +1,28 @@
 from fastapi import FastAPI, HTTPException
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.middleware.cors import CORSMiddleware
+import jwt
+import hashlib
 from pydantic import BaseModel
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
 import openai
 import os
 import json
 import requests
-import access_app
+#import genInvoice
+from pathlib import Path
+from bs4 import BeautifulSoup as Soup
 
-# JWT Define a secret key (change this to a secure random value in production)
-SECRET_KEY = os.getenv("RAYZE_KEY")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+PATH_TO_BLOG = Path('/Users/jcooper/py/genAi/recruitBot')
+PATH_TO_CONTENT = PATH_TO_BLOG/"content"
+PATH_TO_CONTENT.mkdir(exist_ok=True, parents=True)
+RAYZE_LOGO = PATH_TO_CONTENT/"rayze_logo.jpg"
+
+
 
 #Initialize
 load_dotenv()
@@ -21,8 +30,25 @@ openai.api_key = os.getenv("OPEN_AI_KEY")
 openai.organization = os.getenv("OPEN_AI_ORG")
 elevenlabs_key = os.getenv("ELEVENLABS_KEY")
 
+# JWT Define a secret key (change this to a secure random value in production)
+sec_value = os.getenv("RAYZE_KEY")
+SECRET_KEY = str(sec_value)
+sec_value = os.getenv("CLIENT_KEY")
+CLIENT_KEY = str(sec_value)
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 app = FastAPI()
+# Allow requests from localhost:3000
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["Authorization", "Content-Type"],
+)
 conn = sqlite3.connect('hired.db')
 cursor = conn.cursor()
 
@@ -42,9 +68,18 @@ class Candidate(BaseModel):
 class Client(BaseModel):
     name: str
     client_mgr: str
+    client_email: str
+    client_addr: str
+    client_phone: str
     payment_freq: str
     client_type: str
 
+class Users(BaseModel):
+    name: str
+    email: str
+    msg_id: str
+    role: str
+    password: str
 
 class Transaction(BaseModel):
     client_id: int
@@ -81,11 +116,63 @@ class Invoices(BaseModel):
     inv_value: float
     inv_status: str #NEWLY_SUBMITTED >> PROCESSED >> PAID
 
+class ClientInvoices(BaseModel):
+    inv_date: str
+    due_date: str
+    period_start: str
+    period_end: str
+    client_id: int
+    client_name: str
+    client_contact: str
+    client_email: str
+    client_addr: str
+    client_phone: str
+    explain_str: str
+    inv_value: float
+    inv_status: str #NEWLY_SUBMITTED >> PROCESSED >> PAID
 
 # Connect to SQLite database
 def connectDB():
     conn = sqlite3.connect('hired.db')
     return conn.cursor(), conn
+
+#Authentication functions
+# Function to hash passwords
+def get_password_hash(password: str):
+    #Generate a SHA-256 hash of the input password.    - password: str, the plain text password to be hashed
+    password_bytes = password.encode('utf-8')
+    hash_obj = hashlib.sha256()
+    hash_obj.update(password_bytes)
+    hashed_password = hash_obj.hexdigest()
+    return hashed_password
+
+# Function to verify passwords
+def verify_password(plain_password, hashed_password):
+    #     Verify if a plain text password matches the hashed password.
+    hashed_input_password = get_password_hash(plain_password)
+    print("plain, hashinput, newhash tryhash", plain_password, hashed_password, hashed_input_password, get_password_hash(SECRET_KEY), SECRET_KEY)
+    if hashed_input_password == hashed_password:
+        return True
+    else:
+        return False
+
+
+# Function to generate access token
+def create_access_token(data: dict, expires_delta: timedelta):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + expires_delta
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+# Function to authenticate users
+def authenticate_user(username: str, password: str):
+    user_data = find_user_by_name(username)
+    print('auth ', user_data[1], user_data[5])
+    if user_data:
+        if verify_password(password, user_data[5]):
+            return user_data[1]
+    return None
 
 # Function to save data to the database
 def save_data(table_name, data):
@@ -116,11 +203,43 @@ def find_record_by_id(table_name, record_id):
     cursor.execute(f'SELECT * FROM {table_name} WHERE id = ?', (record_id,))
     return cursor.fetchone()
 
+# Function to find a record by ID
+def find_record_by_field(table_name, field_name, field_value):
+    cursor, conn = connectDB()
+    cursor.execute(f'SELECT * FROM {table_name} WHERE {field_name} = --- ', field_value)
+    print()
+    return cursor.fetchall()
+
 # Function to find a record by name
 def find_record_by_name(table_name, name):
     cursor, conn = connectDB()
     cursor.execute(f'SELECT * FROM {table_name} WHERE name = ?', (name,))
     return cursor.fetchone()
+
+#get transactions for a given recruiter
+@app.get("/get_client_transactions/{recruiter_id}")
+def get_client_transactions(recruiter_id):
+    # Connect to the SQLite database
+    cursor, conn = connectDB()
+
+    # Execute the SQL query with parameterized input
+    cursor.execute('''
+        SELECT transactions.id AS txn_id, candidates.id AS candidate_id, clients.name AS client_name, candidates.name AS candidate_name,
+        transactions.recruiter_price, transactions.client_price, clients.client_mgr as client_contact, clients.client_email AS client_email,
+        clients.client_addr AS client_addr, clients.client_phone AS client_phone, clients.id AS client_id
+        FROM transactions
+        JOIN clients ON transactions.client_id = clients.id
+        JOIN candidates ON transactions.candidate_id = candidates.id
+        WHERE transactions.recruiter_id = ?
+    ''', (recruiter_id,))  # Pass the recruiter ID as a parameter
+
+    # Fetch all rows from the result set
+    rows = cursor.fetchall()
+
+    # Close the database connection
+    conn.close()
+
+    return rows
 
 # Function to handle new candidate creation
 @app.post("/new_candidate")
@@ -152,6 +271,18 @@ def create_invoice(invoice: Invoices):
     save_data('invoices', invoice.dict())
     return {"message": "Invoice created successfully"}
 
+# Function to handle new invoice creation
+@app.post("/new_client_invoice")
+def create_client_invoice(invoice: ClientInvoices):
+    save_data('client_invoices', invoice.dict())
+    return {"message": "Client Invoice created successfully"}
+
+# Function to handle new invoice creation
+@app.post("/new_user")
+def create_user(user: Users):
+    save_data('users', user.dict())
+    return {"message": "User created successfully"}
+
 # Function to list all candidates
 @app.get("/list_candidates")
 def list_candidates():
@@ -174,8 +305,18 @@ def list_cashflows():
 
 # Function to list all invoices
 @app.get("/list_invoices")
-def list_invocies():
+def list_invoices():
     return get_all_records('invoices')
+
+# Function to list all invoices
+@app.get("/list_client_invoices")
+def list_client_invoices():
+    return get_all_records('client_invoices')
+
+# Function to list all invoices
+@app.get("/list_users")
+def list_users():
+    return get_all_records('users')
 
 # Function to update a candidate
 @app.put("/update_candidate/{candidate_id}")
@@ -206,6 +347,18 @@ def update_cashflow(cashflow_id: int, cashflow: Cashflow):
 def update_invoice(invoice_id: int, invoice: Invoices):
     update_data('invoices', invoice_id, invoice.dict())
     return {"message": "Invoice updated successfully"}
+
+# Function to update a invoice
+@app.put("/update_client_invoice/{invoice_id}")
+def update_invoice(invoice_id: int, invoice: ClientInvoices):
+    update_data('client_invoices', invoice_id, invoice.dict())
+    return {"message": "Client Invoice updated successfully"}
+
+# Function to update a invoice
+@app.put("/update_user/{user_id}")
+def update_user(user_id: int, user: Users):
+    update_data('users', user_id, user.dict())
+    return {"message": "User updated successfully"}
 
 # Function to find a candidate by ID
 @app.get("/find_candidate/{candidate_id}")
@@ -252,6 +405,24 @@ def find_invoice(invoice_id: int):
     else:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
+# Function to find a invoice by ID
+@app.get("/find_client_invoice/{invoice_id}")
+def find_client_invoice(invoice_id: int):
+    invoice = find_record_by_id('client_invoices', invoice_id)
+    if invoice:
+        return invoice
+    else:
+        raise HTTPException(status_code=404, detail="Client Invoice not found")
+    
+# Function to find a invoice by ID
+@app.get("/find_user/{user_id}")
+def find_user(user_id: int):
+    user = find_record_by_id('users', user_id)
+    if user:
+        return user
+    else:
+        raise HTTPException(status_code=404, detail="User not found")
+    
 # Function to find a candidate by name
 @app.get("/find_candidate_by_name/{name}")
 def find_candidate_by_name(name: str):
@@ -270,6 +441,298 @@ def find_client_by_name(client_name: str):
     else:
         raise HTTPException(status_code=404, detail="Client not found")
 
+# Function to find a user by name
+@app.get("/find_user_by_name/{user_name}")
+def find_user_by_name(user_name: str):
+    user = find_record_by_name('users', user_name)
+    if user:
+        return user
+    else:
+        raise HTTPException(status_code=404, detail="User not found")
+
+# Function to find a user by name
+@app.get("/find_my_candidates{client_id}")
+def find_my_candidates(client_id: int):
+    txn = find_record_by_field('transactions', 'client_id',client_id)
+    if txn:
+        return txn
+    else:
+        raise HTTPException(status_code=404, detail="Txn not found")
+
+# Function to handle new invoice creation
+@app.post("/submit_client_invoice")
+def submit_client_invoice(invoice: ClientInvoices):
+    save_data('client_invoices', invoice.dict()) #first save the invoice into client_invoices to get an id
+    cursor, conn = connectDB()
+
+    # Extract the client invoice id
+    cursor.execute('''
+        SELECT id 
+        FROM client_invoices
+        WHERE client_invoices.inv_date = ? AND
+        client_invoices.client_id = ?
+    ''', (invoice.inv_date, invoice.client_id))
+
+    # Fetch all rows from the result set
+    rows = cursor.fetchall()
+    if rows:
+    # Get the value from the last row
+        inv_id = rows[-1][0]
+    else:
+        # Handle the case where no rows are returned
+        inv_id = None
+    # Close the database connection
+    conn.close()
+    #call the html creation function
+    return create_html_invoice(inv_id, invoice)
+
+
+
+    
+# Given a Transaction Id generate NEW temporary invoices
+@app.post("/generate_invoices/{transaction_id}")
+def generate_invoices(transaction_id):
+    transaction = find_transaction(transaction_id)
+    if not transaction:
+        print("Transaction not found.")
+        return 0
+
+    # Calculate the number of invoices to be generated
+    start_date = datetime.strptime(transaction[9], '%Y-%m-%d')  # Index 9 is start_date
+    end_date = datetime.strptime(transaction[10], '%Y-%m-%d')  # Index 10 is end_date
+    num_months = (end_date.year - start_date.year) * 12 + end_date.month - start_date.month + 1
+
+    # Generate invoices for each end of month
+    invoices_written = 0
+    for i in range(num_months):
+        # Calculate invoice details
+        inv_date = (start_date + timedelta(days=32)).replace(day=1) - timedelta(days=1)  # Last day of month
+        period_start = start_date
+        period_end = inv_date
+        hours_worked = 160  # Default hours worked
+        inv_value = transaction[5] * hours_worked  # Index 5 is client_price
+        inv_status = "PRE"
+
+        # Insert invoice data into the database
+        invoice_data = {
+        "inv_date":  inv_date.strftime('%Y-%m-%d'),
+        "candidate_id": transaction[2],
+        "period_start":  period_start.strftime('%Y-%m-%d'),
+        "period_end": period_end.strftime('%Y-%m-%d'),
+        "txn_id": transaction[0],
+        "hours_worked": hours_worked,
+        "inv_value":  inv_value,
+        "inv_status": inv_status #NEW >> PROCESSED >> PAID
+        }
+        save_data('invoices', invoice_data)
+        invoices_written += 1
+        # Move start_date to the next month
+        start_date = start_date + timedelta(days=32)
+
+
+        # cursor.execute('''INSERT INTO invoices (inv_date, candidate_id, period_start, period_end, txn_id, hours_worked, inv_value, inv_status) 
+        #                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+        #                (inv_date.strftime('%Y-%m-%d'), transaction[1], period_start.strftime('%Y-%m-%d'),
+        #                 period_end.strftime('%Y-%m-%d'), transaction[0], hours_worked, inv_value, inv_status))
+
+    
+        # # Commit changes and close connection
+        # conn.commit()
+        # conn.close()
+
+    return invoices_written
+    
+# Authenticataion functions
+# Function to generate access token route
+@app.post("/generate_token")
+async def generate_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = authenticate_user(form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user[1]}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+# Function to verify token route
+@app.post("/verify_token")
+async def verify_token(token: str = Depends(oauth2_scheme)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    user_name: str = payload.get("sub")
+    if user_name is None:
+        raise credentials_exception
+    #token_data = TokenData(username=user_name)
+    return token
+
+# Authenticataion functions
+@app.post("/authenticate")
+async def authenticate(form_data: OAuth2PasswordRequestForm = Depends()):
+    #print('adsf', form_data.username, form_data.password)
+    user = authenticate_user(form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user[1]}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+# Register functions
+@app.post("/register")
+async def authenticate(form_data: OAuth2PasswordRequestForm = Depends()):
+    #print('adsf', form_data.username, form_data.password)
+    user_data = {
+        "name": form_data.username,
+        "email": form_data.email,
+        "msg_id": form_data.msg_id,
+        "role": "CLIENT",
+        "password": get_password_hash(form_data.password),
+        "client_id": 0
+    }
+    save_data('users', user_data)
+    return "saved"
+
+@app.get("/get_invoice2")
+def get_invoice2(id_str: str):
+    if id_str == "ABC":
+        html_str = """
+        <div class="render-invoice-container">
+
+          <div class="panel">
+            <logo>
+            <img src="/images/rayze_invoice_logo.jpeg" alt="Logo" width="110" height="50">
+            </logo>
+            <h2>INVOICE</h2>
+            <h4> Bill To: Inkind | 600 Congress Ave, Suite 1700, Austin, TX 78701</h4>
+            <h2> </h2>
+            <table>
+              <tr>
+                <th>Invoice #</th>
+                <th>Invoice Date</th>
+                <th>Due Date</th>
+                <th>Amount Due</th>
+              </tr>
+              <tr>
+                <td>55</td>
+                <td>2024-08-10</td>
+                <td>2024-08-10</td>
+                <td> USD 34,888.44</td>
+              </tr>
+            </table>
+          </div>
+          <div class="panel panel-2">
+            <h2>Total Amount Due:</h2>
+            <h3>USD 34,444 USD</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Description</th>
+                  <th>Hours</th>
+                  <th>Rate</th>
+                  <th>Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Nishant Vagasiha</td>
+                  <td>Technology Services</td>
+                  <td>160</td>
+                  <td> $37.00</td>
+                  <td> $5920.00</td>
+                </tr>
+                <tr>
+                  <td>Kalyan Jangam</td>
+                  <td>Technology Services</td>
+                  <td>128</td>
+                  <td> $85.00</td>
+                  <td> $10,880.00</td>
+                </tr>
+                <tr>
+                  <td>Mayur Mulay</td>
+                  <td>Technology Services</td>
+                  <td>160</td>
+                  <td> $35.00</td>
+                  <td> $5,600.00</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel panel-2">
+            <h2>Please pay O3 Ventures LLC directly via ACH.</h2>
+            <h3> O3 Ventures llc | Acct Num: 40011438155 | Routing number: 124303243 </h3>
+            <h5>Bank Address: American Express National Bank, PO Box 3038, Salt Lake City, UT 84130</h5>
+          </div>
+          <div class="panel panel-2">
+          <h7> O3 Ventures | 21 Sycamore Drive Roslyn NY | 516-800-2548 | 212cooperja@gmail.com</h7>
+          </div>
+        </div>
+        """
+        return {"html": html_str}
+    else:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    
+#create a new invoice in html
+def create_html_invoice(inv_id: int, invoice: ClientInvoices):
+    #new html file
+    files = len(list(PATH_TO_CONTENT.glob('*.html')))
+    new_title = f"Inv_{invoice.client_name}_{inv_id}.html"
+    new_title_pdf = f"Inv_{invoice.client_name}_{inv_id}.pdf"
+
+    path_to_new_content = PATH_TO_CONTENT/new_title
+    path_to_new_pdf = PATH_TO_CONTENT/new_title_pdf
+    path_to_template = "{}/invoice_template.html".format(PATH_TO_CONTENT)
+
+
+
+
+    #read the template
+    html_content=""
+    with open(path_to_template, 'r') as file:
+        html_content = file.read()
+        html_content = html_content.replace("total_due", f"${invoice.inv_value:.2f}")
+        html_content = html_content.replace("due_date", invoice.due_date)
+        html_content = html_content.replace("invoice_title", "Technology Services")
+        html_content = html_content.replace("invoice_num", str(inv_id))
+        html_content = html_content.replace("invoice_date", invoice.inv_date)
+        html_content = html_content.replace("client_name", invoice.client_name)
+        html_content = html_content.replace("client_contact", invoice.client_contact)
+        html_content = html_content.replace("invoice_table", invoice.explain_str)
+        html_content = html_content.replace("rayze_logo", RAYZE_LOGO.as_posix())
+
+
+    print("html_content is ", html_content)
+    print("explainstr is ", invoice.explain_str)
+    
+    #Save pdf
+    # Configuration for wkhtmltopdf (you might need to provide the path to the wkhtmltopdf binary)
+    # config = pdfkit.configuration(wkhtmltopdf='/usr/local/bin/wkhtmltopdf')  # Adjust path as necessary
+    # pdfkit.from_string(html_content, path_to_new_pdf, configuration=config)
+
+    #write new invoice
+    if not os.path.exists(path_to_new_content):
+        with open(path_to_new_content,"w") as f:
+            f.write(html_content)
+            return path_to_new_content
+    else:
+        raise FileExistsError('file already exists')
+    
+    
+# Authentication functions
 #Function to create new DB
 @app.get("/create_db")
 def createDB():
@@ -305,6 +768,9 @@ def createDB():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE,
             client_mgr TEXT,
+            client_email TEXT,
+            client_addr TEXT,
+            client_phone TEXT,
             payment_freq TEXT,
             client_type TEXT
         )
@@ -322,7 +788,24 @@ def createDB():
             inv_status TEXT
             )
         ''')
-
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS client_invoices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            inv_date TEXT,
+            due_date TEXT,
+            period_start TEXT,
+            period_end TEXT,
+            client_id INTEGER,
+            client_name TEXT,
+            client_contact TEXT,
+            client_email TEXT,
+            client_addr TEXT,
+            client_phone TEXT,
+            explain_str TEXT,
+            inv_value FLOAT,
+            inv_status TEXT
+            )
+        ''')
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -343,7 +826,19 @@ def createDB():
             last_payment_date TEXT
         )
     ''')
-conn.commit()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE,
+            email TEXT,
+            msg_id str,
+            role TEXT,
+            password TEXT,
+            client_id int
+        )
+    ''')
+    conn.commit()
+    return "create_db OK"
 
 
 
@@ -353,29 +848,47 @@ def preloadDB():
     candidate_data = {
         "name": "Siva Pandeti",
         "role": "Data Engineer",
-        "location": "City",
+        "location": "Virgina",
         "candidate_cost": 100,
-        "phone": "123-456-7890",
-        "email": "john.doe@example.com",
+        "phone": "703-937-7731",
+        "email": "psivah@gmail.com",
         "feedback": "Positive",
-        "cv_link": "https://example.com/johndoe_cv.pdf",
+        "cv_link": "https://drive.google.com/file/d/1jkXYMRNpgrfysYOAXDzricr0gswyy0o6/view?usp=drive_link",
         "status": "Hired"
     }
     save_data('candidates', candidate_data)
-
-    # cashflow_data = {
-    #     "cf_date": "2022-01-15",
-    #     "pay_from_id": 1,
-    #     "pay_to_id": 2,
-    #     "cf_value": 5000.00,
-    #     "txn_id": 1,
-    #     "balance": 15000.00
-    # }
-    # save_data('cashflows', cashflow_data)
+    candidate_data = {
+        "name": "Balachander Kandukuri",
+        "role": "ML Engineer",
+        "location": "Texas",
+        "candidate_cost": 100,
+        "phone": "346-565-5618",
+        "email": "kbalachandra1007@gmail.com",
+        "feedback": "Positive",
+        "cv_link": "https://docs.google.com/document/d/1PUErMHUVJVJRXK5pKqaI-RXsCcdEB74d/edit?usp=sharing&ouid=116979632690159824360&rtpof=true&sd=true",
+        "status": "Hired"
+    }
+    save_data('candidates', candidate_data)
+    candidate_data = {
+        "name": "Nishant Vagasiha",
+        "role": "Ruby on rails Engineer",
+        "location": "India",
+        "candidate_cost": 30,
+        "phone": "+91  87932 93234",
+        "email": "nishant@webmatrixcorp.com",
+        "feedback": "Positive",
+        "cv_link": "https://docs.google.com/document/d/18u87iGyZYepZEnMMvQWx2nxQ9SGjWR8s3peWF9dlDPc/edit?usp=sharing",
+        "status": "Hired"
+    }
+    save_data('candidates', candidate_data)
+    
 
     client_data = {
         "name": "Rayze",
         "client_mgr": "JC",
+        "client_email": "212cooperja@gmail.com",
+        "client_addr": "21 Sycamore Drive, Roslyn NY 11576",
+        "client_phone": "516 800 2548",
         "payment_freq": "Monthly",
         "client_type": "Owner"
     }
@@ -384,6 +897,9 @@ def preloadDB():
     client_data = {
         "name": "TechRakers",
         "client_mgr": "Ravi Kumar",
+        "client_email": "shanker@techrakers.com",
+        "client_addr": "1602 W Pinhook Rd, Suite 202-B, Lafayette, LA  70508",
+        "client_phone": "703 981 6261",
         "payment_freq": "Monthly",
         "client_type": "Recruiter"
     }
@@ -391,6 +907,9 @@ def preloadDB():
     client_data = {
         "name": "Sodexo",
         "client_mgr": "Martin Ng",
+        "client_email": "martin.ng@sodexo.com",
+        "client_addr": "5290 california ave, Irvine CA 92617",
+        "client_phone": "714-944-3542",
         "payment_freq": "Monthly",
         "client_type": "Client"
     }
@@ -398,22 +917,35 @@ def preloadDB():
     client_data = {
         "name": "Aventar",
         "client_mgr": "Sarosh Mistry",
+        "client_email": "saroshmistry@sodexo.com",
+        "client_addr": "349 Pinebrook drive, Laguna CA 92654",
+        "client_phone": "949 212 9927",
         "payment_freq": "Monthly",
         "client_type": "Referral"
     }
     save_data('clients', client_data)
+    client_data = {
+        "name": "InKind",
+        "client_mgr": "Dijoy Divakar",
+        "client_email": "ap@inkind.com",
+        "client_addr": "600 Congress Ave, Suite 1700, Austin, TX 78701",
+        "client_phone": "870-273-8473",
+        "payment_freq": "Monthly",
+        "client_type": "Client"
+    }
+    save_data('clients', client_data)
 
     transaction_data = {
-        "txn_date" : "2023-12-27",
+        "txn_date" : "2023-12-26",
         "candidate_id" : 1,
-        "client_id" : 2,
-        "recruiter_id" : 3,
+        "client_id" : 3,
+        "recruiter_id" : 2,
         "referral_id" : 4,
         "client_price" : 105.0,
         "referral_price" : 2.5,
         "recruiter_price" : 100.0,
-        "start_date": "2023-12-27",
-        "end_date" : "2024-5-27",
+        "start_date": "2023-12-26",
+        "end_date" : "2024-6-26",
         "num_payments_received" : 0,
         "total_client_recv" : 0,
         "total_recruiter_paid" : 0.0,
@@ -422,17 +954,114 @@ def preloadDB():
     }
     save_data('transactions', transaction_data)
 
-    invoice_data = {
-        "inv_date":  "2023-12-31",
-        "candidate_id": 1,
-        "period_start":  "2023-12-18",
-        "period_end": "2023-12-31",
-        "txn_id": 1,
-        "hours_worked": 72,
-        "inv_value":  7560,
-        "inv_status": "PROCESSED" #NEWLY_SUBMITTED >> PROCESSED >> PAID
+    transaction_data = {
+        "txn_date" : "2024-03-01",
+        "candidate_id" : 2,
+        "client_id" : 3,
+        "recruiter_id" : 2,
+        "referral_id" : 4,
+        "client_price" : 120.0,
+        "referral_price" : 5.0,
+        "recruiter_price" : 110.0,
+        "start_date": "2024-03-01",
+        "end_date" : "2024-08-31",
+        "num_payments_received" : 0,
+        "total_client_recv" : 0,
+        "total_recruiter_paid" : 0.0,
+        "total_referral_paid" : 0.0,
+        "last_payment_date" : "NULL"
     }
-    save_data('invoices', invoice_data)
+    save_data('transactions', transaction_data)
+
+    transaction_data = {
+        "txn_date" : "2024-03-01",
+        "candidate_id" : 3,
+        "client_id" : 5,
+        "recruiter_id" : 2,
+        "referral_id" : 4,
+        "client_price" : 37.0,
+        "referral_price" : 2.5,
+        "recruiter_price" : 32.0,
+        "start_date": "2024-03-01",
+        "end_date" : "2024-08-31",
+        "num_payments_received" : 0,
+        "total_client_recv" : 0,
+        "total_recruiter_paid" : 0.0,
+        "total_referral_paid" : 0.0,
+        "last_payment_date" : "NULL"
+    }
+    save_data('transactions', transaction_data)
+
+    # invoice_data = {
+    #     "inv_date":  "2023-12-31",
+    #     "candidate_id": 1,
+    #     "period_start":  "2023-12-18",
+    #     "period_end": "2023-12-31",
+    #     "txn_id": 1,
+    #     "hours_worked": 72,
+    #     "inv_value":  7560,
+    #     "inv_status": "PROCESSED" #PRE >> PROCESSED >> PAID //PRE invoices are per txn. so need to be aggregated by client
+    # }
+    # save_data('invoices', invoice_data)
+
+    user_data = {
+        "name": "212cooperja@gmail.com",
+        "email": "212cooperja@gmail.com",
+        "msg_id": "@jc212",
+        "role": "ADMIN",
+        "password": get_password_hash(SECRET_KEY),
+        "client_id": 0
+    }
+    save_data('users', user_data)
+    user_data = {
+        "name": "shanker@techrakers.com",
+        "email": "shanker@techrakers.com",
+        "msg_id": "@shankerravi",
+        "role": "Recruiter",
+        "password": get_password_hash(CLIENT_KEY),
+        "client_id": 0
+    }
+    save_data('users', user_data)
+    user_data = {
+        "name": "ar@techrakers.com",
+        "email": "ar@techrakers.com",
+        "msg_id": "@arrakers",
+        "role": "Recruiter",
+        "password": get_password_hash(CLIENT_KEY),
+        "client_id": 0
+    }
+    save_data('users', user_data)
+
+    ##########
+    authenticated_token = auth_test("JC", "adfaa")
+    if authenticated_token:
+        print("Authenticated. Token:", authenticated_token)
+    else:
+        print("Authentication failed.")
+    ################
+
+    return "preload_db OK"
+
+## TEST AUTH
+async def auth_test(username: str, password: str):
+    # Step 1: Generate token
+    token_response = await generate_token(username=username, password=password)
+    
+    # Step 2: Check if authentication succeeded
+    if token_response.get("access_token"):
+        return token_response.get("access_token")
+    else:
+        # Step 3: If authentication fails, try to authenticate directly
+        authenticate_response = await authenticate(username=username, password=password)
+        if authenticate_response.get("access_token"):
+            return authenticate_response.get("access_token")
+        else:
+            return None
+        
+
+
+## TEST AUTH
+
 
 ##MAIN
 if __name__ == "__main__":

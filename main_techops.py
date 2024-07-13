@@ -128,6 +128,8 @@ class ClientInvoices(BaseModel):
     client_addr: str
     client_phone: str
     explain_str: str
+    inv_html: str
+    inv_hash: str
     inv_value: float
     inv_status: str #NEWLY_SUBMITTED >> PROCESSED >> PAID
 
@@ -150,7 +152,7 @@ def get_password_hash(password: str):
 def verify_password(plain_password, hashed_password):
     #     Verify if a plain text password matches the hashed password.
     hashed_input_password = get_password_hash(plain_password)
-    print("plain, hashinput, newhash tryhash", plain_password, hashed_password, hashed_input_password, get_password_hash(SECRET_KEY), SECRET_KEY)
+    print("plain input : ", plain_password, "hashed input: ", hashed_password, "hashOfPlain :", hashed_input_password, "hashOfKey: ",get_password_hash(SECRET_KEY),"key: ", SECRET_KEY)
     if hashed_input_password == hashed_password:
         return True
     else:
@@ -413,7 +415,16 @@ def find_client_invoice(invoice_id: int):
         return invoice
     else:
         raise HTTPException(status_code=404, detail="Client Invoice not found")
-    
+
+# Function to find a invoice by ID
+@app.get("/find_invoice_client_id/{client_id}")
+def find_client_invoice(invoice_id: int):
+    invoice = find_record_by_id('client_invoices', invoice_id)
+    if invoice:
+        return invoice
+    else:
+        raise HTTPException(status_code=404, detail="Client Invoice not found")
+
 # Function to find a invoice by ID
 @app.get("/find_user/{user_id}")
 def find_user(user_id: int):
@@ -422,7 +433,7 @@ def find_user(user_id: int):
         return user
     else:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
 # Function to find a candidate by name
 @app.get("/find_candidate_by_name/{name}")
 def find_candidate_by_name(name: str):
@@ -431,15 +442,6 @@ def find_candidate_by_name(name: str):
         return candidate
     else:
         raise HTTPException(status_code=404, detail="Candidate not found")
-
-# Function to find a client by name
-@app.get("/find_client_by_name/{client_name}")
-def find_client_by_name(client_name: str):
-    client = find_record_by_name('clients', client_name)
-    if client:
-        return client
-    else:
-        raise HTTPException(status_code=404, detail="Client not found")
 
 # Function to find a user by name
 @app.get("/find_user_by_name/{user_name}")
@@ -451,13 +453,37 @@ def find_user_by_name(user_name: str):
         raise HTTPException(status_code=404, detail="User not found")
 
 # Function to find a user by name
-@app.get("/find_my_candidates{client_id}")
+@app.get("/find_my_candidates/{client_id}")
 def find_my_candidates(client_id: int):
     txn = find_record_by_field('transactions', 'client_id',client_id)
     if txn:
         return txn
     else:
         raise HTTPException(status_code=404, detail="Txn not found")
+# Function to find a user by name
+@app.get("/find_latest_invoice/{client_id}")
+def find_latest_invoice(client_id: str):
+    cursor, conn = connectDB()
+
+    # Extract the client invoice id
+    cursor.execute('''
+        SELECT client_invoices.inv_date, max(id)
+        FROM client_invoices
+        WHERE client_invoices.client_id = ?
+    ''', (client_id))
+
+    # Fetch all rows from the result set
+    rows = cursor.fetchall()
+    if rows:
+    # Get the value from the last row
+        explain_str = rows[-1][0]
+        return explain_str
+
+    else:
+        # Handle the case where no rows are returned
+        explain_str = None
+
+
 
 # Function to handle new invoice creation
 @app.post("/submit_client_invoice")
@@ -467,7 +493,7 @@ def submit_client_invoice(invoice: ClientInvoices):
 
     # Extract the client invoice id
     cursor.execute('''
-        SELECT id 
+        SELECT max(id)
         FROM client_invoices
         WHERE client_invoices.inv_date = ? AND
         client_invoices.client_id = ?
@@ -481,14 +507,41 @@ def submit_client_invoice(invoice: ClientInvoices):
     else:
         # Handle the case where no rows are returned
         inv_id = None
+
+    #update html and hash in invoice
+    invoice.inv_html = create_html_invoice(inv_id, invoice)
+    invoice.inv_hash = get_password_hash(str(inv_id) + "_" + str(invoice.client_id) + "_" + str(invoice.inv_date)) #get_password_hash(invoice.inv_html)
+    print("hash inv_date, clientid, invid : ",str(invoice.inv_hash), invoice.inv_date, invoice.client_id, inv_id)
+    #update_invoice(inv_id, invoice)
+    # Extract the client invoice id
+    cursor.execute('''
+        UPDATE client_invoices
+        SET inv_html = ?,
+        inv_hash = ?
+        WHERE id = ?
+    ''', (invoice.inv_html, invoice.inv_hash, inv_id))
+    conn.commit()
+    # Fetch all rows from the result set
+    rows = cursor.fetchall()
+    if rows:
+    # Get the value from the last row
+        res = rows[-1][0]
+    else:
+        # Handle the case where no rows are returned
+        res = None
+    print('update result: ',res)
+    print('hash, update date, client , id : ', invoice.inv_hash, invoice.inv_date, invoice.client_id, inv_id)
+
+
     # Close the database connection
     conn.close()
-    #call the html creation function
-    return create_html_invoice(inv_id, invoice)
+
+
+    return invoice.inv_html
 
 
 
-    
+
 # Given a Transaction Id generate NEW temporary invoices
 @app.post("/generate_invoices/{transaction_id}")
 def generate_invoices(transaction_id):
@@ -530,18 +583,18 @@ def generate_invoices(transaction_id):
         start_date = start_date + timedelta(days=32)
 
 
-        # cursor.execute('''INSERT INTO invoices (inv_date, candidate_id, period_start, period_end, txn_id, hours_worked, inv_value, inv_status) 
+        # cursor.execute('''INSERT INTO invoices (inv_date, candidate_id, period_start, period_end, txn_id, hours_worked, inv_value, inv_status)
         #                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
         #                (inv_date.strftime('%Y-%m-%d'), transaction[1], period_start.strftime('%Y-%m-%d'),
         #                 period_end.strftime('%Y-%m-%d'), transaction[0], hours_worked, inv_value, inv_status))
 
-    
+
         # # Commit changes and close connection
         # conn.commit()
         # conn.close()
 
     return invoices_written
-    
+
 # Authenticataion functions
 # Function to generate access token route
 @app.post("/generate_token")
@@ -596,9 +649,8 @@ async def authenticate(form_data: OAuth2PasswordRequestForm = Depends()):
 async def authenticate(form_data: OAuth2PasswordRequestForm = Depends()):
     #print('adsf', form_data.username, form_data.password)
     user_data = {
-        "name": form_data.username,
+        "name": form_data.name,
         "email": form_data.email,
-        "msg_id": form_data.msg_id,
         "role": "CLIENT",
         "password": get_password_hash(form_data.password),
         "client_id": 0
@@ -606,86 +658,30 @@ async def authenticate(form_data: OAuth2PasswordRequestForm = Depends()):
     save_data('users', user_data)
     return "saved"
 
-@app.get("/get_invoice2")
-def get_invoice2(id_str: str):
-    if id_str == "ABC":
-        html_str = """
-        <div class="render-invoice-container">
+@app.get("/get_invoice/{id_str}")
+def get_invoice(id_str):
+    cursor, conn = connectDB()
+    print('inv hash is ',id_str)
 
-          <div class="panel">
-            <logo>
-            <img src="/images/rayze_invoice_logo.jpeg" alt="Logo" width="110" height="50">
-            </logo>
-            <h2>INVOICE</h2>
-            <h4> Bill To: Inkind | 600 Congress Ave, Suite 1700, Austin, TX 78701</h4>
-            <h2> </h2>
-            <table>
-              <tr>
-                <th>Invoice #</th>
-                <th>Invoice Date</th>
-                <th>Due Date</th>
-                <th>Amount Due</th>
-              </tr>
-              <tr>
-                <td>55</td>
-                <td>2024-08-10</td>
-                <td>2024-08-10</td>
-                <td> USD 34,888.44</td>
-              </tr>
-            </table>
-          </div>
-          <div class="panel panel-2">
-            <h2>Total Amount Due:</h2>
-            <h3>USD 34,444 USD</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Description</th>
-                  <th>Hours</th>
-                  <th>Rate</th>
-                  <th>Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Nishant Vagasiha</td>
-                  <td>Technology Services</td>
-                  <td>160</td>
-                  <td> $37.00</td>
-                  <td> $5920.00</td>
-                </tr>
-                <tr>
-                  <td>Kalyan Jangam</td>
-                  <td>Technology Services</td>
-                  <td>128</td>
-                  <td> $85.00</td>
-                  <td> $10,880.00</td>
-                </tr>
-                <tr>
-                  <td>Mayur Mulay</td>
-                  <td>Technology Services</td>
-                  <td>160</td>
-                  <td> $35.00</td>
-                  <td> $5,600.00</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="panel panel-2">
-            <h2>Please pay O3 Ventures LLC directly via ACH.</h2>
-            <h3> O3 Ventures llc | Acct Num: 40011438155 | Routing number: 124303243 </h3>
-            <h5>Bank Address: American Express National Bank, PO Box 3038, Salt Lake City, UT 84130</h5>
-          </div>
-          <div class="panel panel-2">
-          <h7> O3 Ventures | 21 Sycamore Drive Roslyn NY | 516-800-2548 | 212cooperja@gmail.com</h7>
-          </div>
-        </div>
-        """
+    # Extract the client invoice id
+    cursor.execute('''
+        SELECT inv_html
+        FROM client_invoices
+        WHERE client_invoices.inv_hash = ?
+    ''', (id_str,))
+
+    # Fetch all rows from the result set
+    rows = cursor.fetchall()
+    print(rows)
+    if rows:
+    # Get the value from the last row
+        html_str = rows[-1][0]
+        print('found inv_hash ',html_str)
         return {"html": html_str}
     else:
+        # Handle the case where no rows are returned
         raise HTTPException(status_code=404, detail="Invoice not found")
-    
+
 #create a new invoice in html
 def create_html_invoice(inv_id: int, invoice: ClientInvoices):
     #new html file
@@ -710,14 +706,14 @@ def create_html_invoice(inv_id: int, invoice: ClientInvoices):
         html_content = html_content.replace("invoice_num", str(inv_id))
         html_content = html_content.replace("invoice_date", invoice.inv_date)
         html_content = html_content.replace("client_name", invoice.client_name)
-        html_content = html_content.replace("client_contact", invoice.client_contact)
+        #html_content = html_content.replace("client_contact", invoice.client_contact)
         html_content = html_content.replace("invoice_table", invoice.explain_str)
         html_content = html_content.replace("rayze_logo", RAYZE_LOGO.as_posix())
 
 
     print("html_content is ", html_content)
     print("explainstr is ", invoice.explain_str)
-    
+
     #Save pdf
     # Configuration for wkhtmltopdf (you might need to provide the path to the wkhtmltopdf binary)
     # config = pdfkit.configuration(wkhtmltopdf='/usr/local/bin/wkhtmltopdf')  # Adjust path as necessary
@@ -727,11 +723,11 @@ def create_html_invoice(inv_id: int, invoice: ClientInvoices):
     if not os.path.exists(path_to_new_content):
         with open(path_to_new_content,"w") as f:
             f.write(html_content)
-            return path_to_new_content
+            #return path_to_new_content
     else:
         raise FileExistsError('file already exists')
-    
-    
+    return html_content
+
 # Authentication functions
 #Function to create new DB
 @app.get("/create_db")
@@ -802,6 +798,8 @@ def createDB():
             client_addr TEXT,
             client_phone TEXT,
             explain_str TEXT,
+            inv_html TEXT,
+            inv_hash TEXT,
             inv_value FLOAT,
             inv_status TEXT
             )
@@ -861,7 +859,7 @@ def preloadDB():
         "name": "Balachander Kandukuri",
         "role": "ML Engineer",
         "location": "Texas",
-        "candidate_cost": 100,
+        "candidate_cost": 110,
         "phone": "346-565-5618",
         "email": "kbalachandra1007@gmail.com",
         "feedback": "Positive",
@@ -873,7 +871,7 @@ def preloadDB():
         "name": "Nishant Vagasiha",
         "role": "Ruby on rails Engineer",
         "location": "India",
-        "candidate_cost": 30,
+        "candidate_cost": 32,
         "phone": "+91  87932 93234",
         "email": "nishant@webmatrixcorp.com",
         "feedback": "Positive",
@@ -881,12 +879,47 @@ def preloadDB():
         "status": "Hired"
     }
     save_data('candidates', candidate_data)
-    
+    candidate_data = {
+        "name": "Mayur Mulay",
+        "role": "QA Engineer",
+        "location": "India",
+        "candidate_cost": 30,
+        "phone": "+91 9404406545",
+        "email": "mayurkmulay91@gmail.com",
+        "feedback": "Positive",
+        "cv_link": "https://docs.google.com/document/d/12JQITOn0FfmoAkkTBbh8cZXskCur_6Ekw0vvQZPZGXI/edit?usp=sharing",
+        "status": "Hired"
+    }
+    save_data('candidates', candidate_data)
+    candidate_data = {
+        "name": "Iti Behati",
+        "role": "QA Engineer",
+        "location": "USA",
+        "candidate_cost": 69,
+        "phone": "+1 240 889 9419",
+        "email": "bahetyiti@gmail.com",
+        "feedback": "Positive",
+        "cv_link": "https://docs.google.com/document/d/1jKs2Bd_eleFrvm4VmUmXPgfAhjFDtnf5qUrC2hMgkIg/edit?usp=sharing",
+        "status": "Hired"
+    }
+    save_data('candidates', candidate_data)
+    candidate_data = {
+        "name": "Hani Kitabwalla",
+        "role": "Data Analyst",
+        "location": "USA",
+        "candidate_cost": 44,
+        "phone": "+1 610 390 7990",
+        "email": "hkitab08@gmail.com",
+        "feedback": "Positive",
+        "cv_link": "https://docs.google.com/document/d/1EG16MBzwWZ64p4xo9UhhXKNAJuuqaHCLiVQq8SsUwhY/edit?usp=sharing",
+        "status": "Hired"
+    }
+    save_data('candidates', candidate_data)
 
     client_data = {
         "name": "Rayze",
         "client_mgr": "JC",
-        "client_email": "212cooperja@gmail.com",
+        "client_email": "jc@rayze.xyz",
         "client_addr": "21 Sycamore Drive, Roslyn NY 11576",
         "client_phone": "516 800 2548",
         "payment_freq": "Monthly",
@@ -991,7 +1024,60 @@ def preloadDB():
         "last_payment_date" : "NULL"
     }
     save_data('transactions', transaction_data)
-
+    transaction_data = {
+        "txn_date" : "2024-06-01",
+        "candidate_id" : 4,
+        "client_id" : 5,
+        "recruiter_id" : 2,
+        "referral_id" : 4,
+        "client_price" : 35.0,
+        "referral_price" : 2.5,
+        "recruiter_price" : 30.0,
+        "start_date": "2024-06-01",
+        "end_date" : "2024-12-01",
+        "num_payments_received" : 0,
+        "total_client_recv" : 0,
+        "total_recruiter_paid" : 0.0,
+        "total_referral_paid" : 0.0,
+        "last_payment_date" : "NULL"
+    }
+    save_data('transactions', transaction_data)
+    transaction_data = {
+        "txn_date" : "2024-06-01",
+        "candidate_id" : 5,
+        "client_id" : 3,
+        "recruiter_id" : 2,
+        "referral_id" : 4,
+        "client_price" : 76.0,
+        "referral_price" : 2.5,
+        "recruiter_price" : 30.0,
+        "start_date": "2024-06-01",
+        "end_date" : "2024-12-01",
+        "num_payments_received" : 0,
+        "total_client_recv" : 0,
+        "total_recruiter_paid" : 0.0,
+        "total_referral_paid" : 0.0,
+        "last_payment_date" : "NULL"
+    }
+    save_data('transactions', transaction_data)
+    transaction_data = {
+        "txn_date" : "2024-07-01",
+        "candidate_id" : 6,
+        "client_id" : 3,
+        "recruiter_id" : 2,
+        "referral_id" : 4,
+        "client_price" : 54.0,
+        "referral_price" : 2.5,
+        "recruiter_price" : 44.0,
+        "start_date": "2024-07-01",
+        "end_date" : "2025-01-01",
+        "num_payments_received" : 0,
+        "total_client_recv" : 0,
+        "total_recruiter_paid" : 0.0,
+        "total_referral_paid" : 0.0,
+        "last_payment_date" : "NULL"
+    }
+    save_data('transactions', transaction_data)
     # invoice_data = {
     #     "inv_date":  "2023-12-31",
     #     "candidate_id": 1,
@@ -1005,8 +1091,8 @@ def preloadDB():
     # save_data('invoices', invoice_data)
 
     user_data = {
-        "name": "212cooperja@gmail.com",
-        "email": "212cooperja@gmail.com",
+        "name": "jc@rayze.xyz",
+        "email": "jc@rayze.xyz",
         "msg_id": "@jc212",
         "role": "ADMIN",
         "password": get_password_hash(SECRET_KEY),
@@ -1046,7 +1132,7 @@ def preloadDB():
 async def auth_test(username: str, password: str):
     # Step 1: Generate token
     token_response = await generate_token(username=username, password=password)
-    
+
     # Step 2: Check if authentication succeeded
     if token_response.get("access_token"):
         return token_response.get("access_token")
@@ -1057,7 +1143,7 @@ async def auth_test(username: str, password: str):
             return authenticate_response.get("access_token")
         else:
             return None
-        
+
 
 
 ## TEST AUTH
