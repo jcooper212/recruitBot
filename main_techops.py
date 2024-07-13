@@ -44,10 +44,10 @@ app = FastAPI()
 # Allow requests from localhost:3000
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["*"],
 )
 conn = sqlite3.connect('hired.db')
 cursor = conn.cursor()
@@ -700,7 +700,7 @@ def create_html_invoice(inv_id: int, invoice: ClientInvoices):
     html_content=""
     with open(path_to_template, 'r') as file:
         html_content = file.read()
-        html_content = html_content.replace("total_due", f"${invoice.inv_value:.2f}")
+        html_content = html_content.replace("total_due", f"${invoice.inv_value:,.2f}")
         html_content = html_content.replace("due_date", invoice.due_date)
         html_content = html_content.replace("invoice_title", "Technology Services")
         html_content = html_content.replace("invoice_num", str(inv_id))
