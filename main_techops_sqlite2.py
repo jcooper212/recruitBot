@@ -43,7 +43,6 @@ app.add_middleware(
 # SQLAlchemy setup
 DB_URL = os.getenv("DB_URL")
 username = 'postgres.tmqcprxidpcefgegkczt'
-password = '$Jam$hed12345'
 host = 'aws-0-us-east-1.pooler.supabase.com'
 port = '6543'
 dbname = 'postgres'
