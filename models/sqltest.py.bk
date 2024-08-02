@@ -1,0 +1,71 @@
+import sqlitecloud
+
+# Open the connection to SQLite Cloud
+#conn = sqlitecloud.connect("sqlitecloud://myhost.sqlite.cloud:8860?apikey=myapikey")
+conn = sqlitecloud.connect("sqlitecloud://csjlcc8lsk.sqlite.cloud:8860/Rayze?apikey=D2S27bXlWEW6af6SLMcsFouWXI2728fqPQWieZxkML8")
+
+# You can autoselect the database during the connect call
+# by adding the database name as path of the SQLite Cloud
+# connection string, eg:
+# conn = sqlitecloud.connect("sqlitecloud://myhost.sqlite.cloud:8860/mydatabase?apikey=myapikey")
+db_name = "Rayze"
+conn.execute(f"USE DATABASE {db_name}")
+
+# Connect to SQLite database
+def connectDB(db_name):
+    ####DEV
+    # conn = sqlite3.connect('hired.db')
+    # return conn.cursor(), conn
+    ####DEV
+
+    ###PROD
+    conn = sqlitecloud.connect("sqlitecloud://csjlcc8lsk.sqlite.cloud:8860/Rayze?apikey=D2S27bXlWEW6af6SLMcsFouWXI2728fqPQWieZxkML8")
+    conn.execute(f"SET USER jcooper")
+    conn.commit()
+    conn.execute(f"USE DATABASE {db_name}")
+    conn.commit()
+    return conn.cursor(), conn
+
+def save_data(db_name, table_name, data):
+
+    cursor, conn = connectDB(db_name)
+    columns = ', '.join(data.keys())
+    values = ', '.join(['?' for _ in range(len(data))])
+    query = f'INSERT INTO {table_name} ({columns}) VALUES ({values}) '
+    print('query is.... ', query, tuple(data.values()))
+    cursor.execute(query, tuple(data.values()))
+    conn.commit()
+    conn.close()
+
+
+
+####MAIN
+conn.execute(f"USE DATABASE chinook.sqlite")
+conn.commit()
+cursor = conn.execute("SELECT * FROM albums WHERE AlbumId = ?", (1, ))
+result = cursor.fetchone()
+
+print(result)
+
+conn.close()
+
+candidate_data = {
+        "name": "asdfa",
+        "role": "Data Engineer",
+        "location": "Virgina",
+        "candidate_cost": 100,
+        "phone": "703-937-7731",
+        "email": "psivah@gmail.com",
+        "feedback": "Positive",
+        #"cv_link": "https://drive.google.com/file/d/1jkXYMRNpgrfysYOAXDzricr0gswyy0o6/view",
+        "cv_link": "https://drive.google.com/file/d/1jkXYMRNpgrfysYOAXDzricr0gswyy0o6/view?usp=drive_link",
+        "status": "Hired"
+}
+save_data('Rayze', 'candidates2', candidate_data)
+
+album_data = {
+        "Title": "Siva Panadsfadesssti",
+        "ArtistId": 100
+}
+save_data('chinook.sqlite', 'albums', album_data)
+

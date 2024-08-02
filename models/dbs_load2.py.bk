@@ -1,0 +1,182 @@
+from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi.security import OAuth2PasswordBearer
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey
+from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.exc import SQLAlchemyError
+import jwt
+import hashlib
+from pydantic import BaseModel
+from datetime import datetime, timedelta
+from dotenv import load_dotenv
+import openai
+import os
+
+# Initialize
+load_dotenv()
+openai.api_key = os.getenv("OPEN_AI_KEY")
+openai.organization = os.getenv("OPEN_AI_ORG")
+
+# JWT Define a secret key (change this to a secure random value in production)
+SECRET_KEY = os.getenv("RAYZE_KEY")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+app = FastAPI()
+
+# Allow requests from localhost:3000
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# SQLAlchemy setup
+DATABASE_URL = os.getenv("DATABASE_URL")
+username = 'postgres.tmqcprxidpcefgegkczt'
+password = '$Jam$hed12345'
+host = 'aws-0-us-east-1.pooler.supabase.com'
+port = '6543'
+dbname = 'postgres'
+db2 = f"postgresql://{username}:{password}@{host}:{port}/{dbname}"
+DATABASE_URL2 = 'postgresql+psycopg2://: host=aws-0-us-east-1.pooler.supabase.com port=6543 dbname=postgres'
+engine = create_engine(db2)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+# Define models
+class Candidate(Base):
+    __tablename__ = 'candidates'
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True)
+    role = Column(String)
+    location = Column(String)
+    candidate_cost = Column(Float)
+    phone = Column(String)
+    email = Column(String)
+    feedback = Column(String)
+    cv_link = Column(String)
+    status = Column(String)
+
+class Client(Base):
+    __tablename__ = 'clients'
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True)
+    client_mgr = Column(String)
+    client_email = Column(String)
+    client_addr = Column(String)
+    client_phone = Column(String)
+    payment_freq = Column(String)
+    client_type = Column(String)
+
+class Transaction(Base):
+    __tablename__ = 'transactions'
+    id = Column(Integer, primary_key=True, index=True)
+    txn_date = Column(DateTime)
+    candidate_id = Column(Integer, ForeignKey('candidates.id'))
+    client_id = Column(Integer, ForeignKey('clients.id'))
+    recruiter_id = Column(Integer)
+    referral_id = Column(Integer)
+    client_price = Column(Float)
+    referral_price = Column(Float)
+    recruiter_price = Column(Float)
+    start_date = Column(DateTime)
+    end_date = Column(DateTime)
+    num_payments_received = Column(Integer)
+    total_client_recv = Column(Float)
+    total_recruiter_paid = Column(Float)
+    total_referral_paid = Column(Float)
+    last_payment_date = Column(DateTime)
+
+class User(Base):
+    __tablename__ = 'users'
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True)
+    email = Column(String)
+    msg_id = Column(String)
+    role = Column(String)
+    password = Column(String)
+    client_id = Column(Integer)
+
+# Create tables
+Base.metadata.create_all(bind=engine)
+
+# Dependency
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# Function to hash passwords
+def get_password_hash(password: str):
+    password_bytes = password.encode('utf-8')
+    hash_obj = hashlib.sha256()
+    hash_obj.update(password_bytes)
+    hashed_password = hash_obj.hexdigest()
+    return hashed_password
+
+# Function to save data to the database
+def save_data(db, model, data):
+    try:
+        db_item = model(**data)
+        db.add(db_item)
+        db.commit()
+        db.refresh(db_item)
+    except SQLAlchemyError as e:
+        db.rollback()
+        print(f"An error occurred: {str(e)}")
+
+# Authentication functions
+@app.get("/create_db")
+def create_db():
+    return "Database initialized"
+
+@app.get("/preload_db")
+def preload_db(db: SessionLocal = Depends(get_db)):
+    candidates = [
+        {
+            "name": "Siva Pandeti",
+            "role": "Data Engineer",
+            "location": "Virginia",
+            "candidate_cost": 100,
+            "phone": "703-937-7731",
+            "email": "psivah@gmail.com",
+            "feedback": "Positive",
+            "cv_link": "https://drive.google.com/file/d/1jkXYMRNpgrfysYOAXDzricr0gswyy0o6/view?usp=drive_link",
+            "status": "Hired"
+        },
+        # Add more candidate data here...
+    ]
+
+    clients = [
+        {
+            "name": "Rayze",
+            "client_mgr": "JC",
+            "client_email": "jc@rayze.xyz",
+            "client_addr": "21 Sycamore Drive, Roslyn NY 11576",
+            "client_phone": "516 800 2548",
+            "payment_freq": "Monthly",
+            "client_type": "Owner"
+        },
+        # Add more client data here...
+    ]
+
+    for candidate_data in candidates:
+        save_data(db, Candidate, candidate_data)
+
+    for client_data in clients:
+        save_data(db, Client, client_data)
+
+    return "preload_db OK"
+
+# Run the FastAPI server
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8800)
+

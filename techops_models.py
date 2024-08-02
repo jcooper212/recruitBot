@@ -6,7 +6,6 @@ import jwt
 import hashlib
 from pydantic import BaseModel
 import sqlite3
-import sqlitecloud
 from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
@@ -17,8 +16,6 @@ import requests
 #import genInvoice
 from pathlib import Path
 from bs4 import BeautifulSoup as Soup
-import pkg_resources
-
 
 PATH_TO_BLOG = Path('/Users/jcooper/py/genAi/recruitBot')
 PATH_TO_CONTENT = PATH_TO_BLOG/"content"
@@ -52,16 +49,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-###DEV
-# conn = sqlite3.connect('hired.db')
-# cursor = conn.cursor()
-###DEV
-
-###PROD
-conn = sqlitecloud.connect("sqlitecloud://csjlcc8lsk.sqlite.cloud:8860/Rayze?apikey=D2S27bXlWEW6af6SLMcsFouWXI2728fqPQWieZxkML8")
+conn = sqlite3.connect('hired.db')
+#db_url = 'sqlite://csjlcc8lsk.sqlite.cloud:8860?apikey=D2S27bXlWEW6af6SLMcsFouWXI2728fqPQWieZxkML8'
+#engine = create_engine(db_url)
+#conn = engine.connect()
 cursor = conn.cursor()
-###PROD
+
 
 # Define Pydantic models for request and response data
 class Candidate(BaseModel):
@@ -145,24 +138,8 @@ class ClientInvoices(BaseModel):
 
 # Connect to SQLite database
 def connectDB():
-    ###DEV
-    # conn = sqlite3.connect('hired.db')
-    # return conn.cursor(), conn
-    ###DEV
-    ###PROD
-    conn = sqlitecloud.connect("sqlitecloud://csjlcc8lsk.sqlite.cloud:8860/Rayze?apikey=D2S27bXlWEW6af6SLMcsFouWXI2728fqPQWieZxkML8")
+    conn = sqlite3.connect('hired.db')
     return conn.cursor(), conn
-    ###PROD
-
-
-def list_installed_packages():
-    packages = pkg_resources.working_set
-    package_list = sorted(["%s==%s" % (i.key, i.version) for i in packages])
-    return package_list
-
-@app.get("/packages")
-def get_packages():
-    return list_installed_packages()
 
 #Authentication functions
 # Function to hash passwords
@@ -234,7 +211,7 @@ def find_record_by_id(table_name, record_id):
 # Function to find a record by ID
 def find_record_by_field(table_name, field_name, field_value):
     cursor, conn = connectDB()
-    cursor.execute(f'SELECT * FROM {table_name} WHERE {field_name} = ?', field_value)
+    cursor.execute(f'SELECT * FROM {table_name} WHERE {field_name} = --- ', field_value)
     print()
     return cursor.fetchall()
 
@@ -746,13 +723,13 @@ def create_html_invoice(inv_id: int, invoice: ClientInvoices):
     # pdfkit.from_string(html_content, path_to_new_pdf, configuration=config)
 
     #write new invoice
-    # if not os.path.exists(path_to_new_content):
-    #     with open(path_to_new_content,"w") as f:
-    #         f.write(html_content)
-    #         #return path_to_new_content
-    # else:
-    #     raise FileExistsError('file already exists')
-    # return html_content
+    if not os.path.exists(path_to_new_content):
+        with open(path_to_new_content,"w") as f:
+            f.write(html_content)
+            #return path_to_new_content
+    else:
+        raise FileExistsError('file already exists')
+    return html_content
 
 # Authentication functions
 #Function to create new DB
@@ -1179,4 +1156,4 @@ async def auth_test(username: str, password: str):
 if __name__ == "__main__":
     import uvicorn
     # Run the FastAPI server using uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=5000)
+    uvicorn.run(app, host="127.0.0.1", port=8000)

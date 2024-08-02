@@ -166,41 +166,31 @@ def get_packages():
 
 #Authentication functions
 # Function to hash passwords
-def get_password_hash(password: str):
-    #Generate a SHA-256 hash of the input password.    - password: str, the plain text password to be hashed
-    password_bytes = password.encode('utf-8')
-    hash_obj = hashlib.sha256()
-    hash_obj.update(password_bytes)
-    hashed_password = hash_obj.hexdigest()
-    return hashed_password
+# Utility functions
+def get_password_hash(password: str) -> str:
+    return pwd_context.hash(password)
 
-# Function to verify passwords
-def verify_password(plain_password, hashed_password):
-    #     Verify if a plain text password matches the hashed password.
-    hashed_input_password = get_password_hash(plain_password)
-    print("plain input : ", plain_password, "hashed input: ", hashed_password, "hashOfPlain :", hashed_input_password, "hashOfKey: ",get_password_hash(SECRET_KEY),"key: ", SECRET_KEY)
-    if hashed_input_password == hashed_password:
-        return True
-    else:
-        return False
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(plain_password, hashed_password)
 
+def authenticate_user(db: Session, username: str, password: str):
+    try:
+        user = db.execute(select(User).filter(User.email == username)).scalars().one()
+        if user and verify_password(password, user.password):
+            return user
+        return None
+    except NoResultFound:
+        return None
 
-# Function to generate access token
-def create_access_token(data: dict, expires_delta: timedelta):
+def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
     to_encode = data.copy()
-    expire = datetime.utcnow() + expires_delta
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=15)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
-
-# Function to authenticate users
-def authenticate_user(username: str, password: str):
-    user_data = find_user_by_name(username)
-    print('auth ', user_data[1], user_data[5])
-    if user_data:
-        if verify_password(password, user_data[5]):
-            return user_data[1]
-    return None
 
 # Function to save data to the database
 def save_data(table_name, data):
