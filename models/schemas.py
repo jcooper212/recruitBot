@@ -174,7 +174,11 @@ class ClientInvoiceCreate(ClientInvoiceBase):
     client_email: str
     client_addr: str
     client_phone: str
+    explain_str: str
+    inv_html: str
+    inv_hash: str
     inv_value: float
+    inv_status: str
 
 class ClientInvoiceUpdate(ClientInvoiceBase):
     pass

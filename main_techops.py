@@ -1,13 +1,16 @@
 from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import func
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, NoResultFound
+from sqlalchemy.future import select
 import jwt
 import hashlib
 #from pydantic import BaseModel
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+from pathlib import Path
 import openai
 import os
 
@@ -19,6 +22,12 @@ from models.schemas import CandidateCreate, ClientCreate, TransactionCreate, Cas
 load_dotenv()
 openai.api_key = os.getenv("OPEN_AI_KEY")
 openai.organization = os.getenv("OPEN_AI_ORG")
+
+# Content Path
+PATH_TO_BLOG = Path('.')
+PATH_TO_CONTENT = PATH_TO_BLOG/"content"
+PATH_TO_CONTENT.mkdir(exist_ok=True, parents=True)
+RAYZE_LOGO = PATH_TO_CONTENT/"rayze_logo.jpg"
 
 # JWT Define a secret key (change this to a secure random value in production)
 SECRET_KEY = os.getenv("RAYZE_KEY")
@@ -60,7 +69,7 @@ def get_password_hash(password: str):
 def verify_password(plain_password, hashed_password):
     #     Verify if a plain text password matches the hashed password.
     hashed_input_password = get_password_hash(plain_password)
-    print("plain input : ", plain_password, "hashed input: ", hashed_password, "hashOfPlain :", hashed_input_password, "hashOfKey: ",get_password_hash(SECRET_KEY),"key: ", SECRET_KEY)
+    print("plain pwd inp: ", plain_password, "hashed pwd inp: ", hashed_password, "hash(plain_pwd) :", hashed_input_password, "hashOfKey: ",get_password_hash(SECRET_KEY),"key: ", SECRET_KEY)
     if hashed_input_password == hashed_password:
         return True
     else:
@@ -77,11 +86,16 @@ def create_access_token(data: dict, expires_delta: timedelta):
 
 # Function to authenticate users
 def authenticate_user(username: str, password: str):
-    user_data = find_user_by_name(username)
-    print('auth ', user_data[1], user_data[5])
-    if user_data:
-        if verify_password(password, user_data[5]):
-            return user_data[1]
+    db = next(get_db())
+    try:
+        user_data = find_user_by_name(username, db)
+        print('verify ', user_data.name, password, user_data.password)
+        if user_data and verify_password(password, user_data.password):
+            return user_data.name
+    except HTTPException as e:
+        print(e.detail)
+    finally:
+        db.close()
     return None
 
 # Function to save data to the database
@@ -160,14 +174,51 @@ def find_record_by_name(table_name, name):
 
 @app.get("/get_client_transactions/{recruiter_id}")
 def get_client_transactions(recruiter_id: int, db: Session = Depends(get_db)):
-    transactions = (
-        db.query(Transaction)
-        .join(Client, Transaction.client_id == Client.id)
-        .join(Candidate, Transaction.candidate_id == Candidate.id)
-        .filter(Transaction.recruiter_id == recruiter_id)
-        .all()
-    )
-    return transactions
+    try:
+        transactions = (
+        db.query(
+            DBTransaction.id.label('txn_id'),
+            DBCandidate.id.label('candidate_id'),
+            DBClient.name.label('client_name'),
+            DBCandidate.name.label('candidate_name'),
+            DBTransaction.recruiter_price,
+            DBTransaction.client_price,
+            DBClient.client_mgr.label('client_contact'),
+            DBClient.client_email,
+            DBClient.client_addr,
+            DBClient.client_phone,
+            DBClient.id.label('client_id')
+            )
+            .join(DBClient, DBTransaction.client_id == DBClient.id)
+            .join(DBCandidate, DBTransaction.candidate_id == DBCandidate.id)
+            .filter(DBTransaction.recruiter_id == recruiter_id)
+            .all()
+        )
+        #print(transactions)
+        if not transactions:
+            raise HTTPException(status_code=404, detail="No transactions found")
+        
+                # Convert to a list of dictionaries
+        transactions_list = [
+            {
+                'txn_id': txn_id,
+                'candidate_id': candidate_id,
+                'client_name': client_name,
+                'candidate_name': candidate_name,
+                'recruiter_price': recruiter_price,
+                'client_price': client_price,
+                'client_contact': client_contact,
+                'client_email': client_email,
+                'client_addr': client_addr,
+                'client_phone': client_phone,
+                'client_id': client_id
+            }
+            for txn_id, candidate_id, client_name, candidate_name, recruiter_price, client_price, client_contact, client_email, client_addr, client_phone, client_id in transactions
+        ]
+        return transactions_list    
+    except Exception as e:
+        print(f"Error occurred: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Function to handle new candidate creation
 @app.post("/new_candidate", response_model=Candidate)
@@ -486,24 +537,25 @@ def find_latest_invoice(client_id: str, db: Session = Depends(get_db)):
 
 # Submit client invoice
 @app.post("/submit_client_invoice")
-def submit_client_invoice(invoice: ClientInvoice, db: Session = Depends(get_db)):
-    db.add(invoice)
+def submit_client_invoice(invoice: ClientInvoiceCreate, db: Session = Depends(get_db)):
+    invoice_data = DBClientInvoice(**invoice.dict())    
+    db.add(invoice_data)
     db.commit()
-    db.refresh(invoice)
+    db.refresh(invoice_data)
 
     # Extract the client invoice id
-    inv_id = db.query(func.max(ClientInvoice.id))\
-               .filter(ClientInvoice.inv_date == invoice.inv_date,
-                       ClientInvoice.client_id == invoice.client_id)\
+    inv_id = db.query(func.max(DBClientInvoice.id))\
+               .filter(DBClientInvoice.inv_date == invoice.inv_date,
+                       DBClientInvoice.client_id == invoice.client_id)\
                .scalar()
 
     if inv_id:
         # Update invoice HTML and hash
-        invoice.inv_html = create_html_invoice(inv_id, invoice)
+        invoice.inv_html = create_html_invoice(inv_id, invoice, db)
         invoice.inv_hash = get_password_hash(f"{inv_id}_{invoice.client_id}_{invoice.inv_date}")
 
-        db.query(ClientInvoice)\
-          .filter(ClientInvoice.id == inv_id)\
+        db.query(DBClientInvoice)\
+          .filter(DBClientInvoice.id == inv_id)\
           .update({"inv_html": invoice.inv_html, "inv_hash": invoice.inv_hash})
         db.commit()
 
@@ -614,18 +666,40 @@ async def register(form_data: OAuth2PasswordRequestForm = Depends(), db: Session
     db.commit()
     return {"message": "User registered successfully"}
 
-# Get Invoice
+# # Get Invoice
+# @app.get("/get_invoice/{id_str}")
+# def get_invoice(id_str: str, db: Session = Depends(get_db)):
+#     try:
+#         invoice = db.execute(select(DBClientInvoice.inv_html).filter(DBClientInvoice.inv_hash == id_str)).scalars().one()
+#         return {"html": invoice}
+#     except NoResultFound:
+#         raise HTTPException(status_code=404, detail="Invoice not found")
+
 @app.get("/get_invoice/{id_str}")
 def get_invoice(id_str: str, db: Session = Depends(get_db)):
     try:
-        invoice = db.execute(select(ClientInvoice.inv_html).filter(ClientInvoice.inv_hash == id_str)).scalars().one()
-        return {"html": invoice}
+        # Retrieve the filename from the database
+        stmt = select(DBClientInvoice.inv_html).filter(DBClientInvoice.inv_hash == id_str)
+        result = db.execute(stmt)
+        filename = result.scalar_one()
+        
+        # Construct the full file path
+        file_path = os.path.join("./", filename)
+        
+        # Read the file contents
+        if os.path.exists(file_path):
+            with open(file_path, 'r') as file:
+                file_contents = file.read()
+            return {"html": file_contents}
+        else:
+            raise HTTPException(status_code=404, detail="File not found")
+        
     except NoResultFound:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-def create_html_invoice(inv_id: int, db: Session) -> str:
+def create_html_invoice(inv_id: int, invoice: ClientInvoice, db: Session = Depends(get_db)) -> str:
     # Fetch the invoice details from the database
-    invoice = db.query(ClientInvoice).filter(ClientInvoice.id == inv_id).first()
+    #invoice = db.query(DBClientInvoice).filter(DBClientInvoice.id == inv_id).first()
     
     if not invoice:
         raise ValueError("Invoice not found")
@@ -653,7 +727,7 @@ def create_html_invoice(inv_id: int, db: Session) -> str:
     
     path_to_new_content = PATH_TO_CONTENT / new_title
     path_to_new_pdf = PATH_TO_CONTENT / new_title_pdf
-    
+    print(path_to_new_content, " : ",html_content)
     # Save the HTML content to a file
     with open(path_to_new_content, 'w') as file:
         file.write(html_content)
